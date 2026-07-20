@@ -1,0 +1,1424 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>The Curse of Unbounded Contexts</title>
+<style>
+
+/* ─── RESET ─────────────────────────────────────────────── */
+*, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+html, body { width: 100%; height: 100%; overflow: hidden; }
+body {
+  font-family: 'Segoe UI', system-ui, -apple-system, sans-serif;
+  background: #f0f2f8;
+  color: #1a1e30;
+}
+
+/* ─── SLIDE LAYOUT ───────────────────────────────────────── */
+.slide {
+  position: fixed;
+  inset: 0;
+  display: none;
+  flex-direction: column;
+  background: #ffffff;
+  padding: 2.5rem 4rem 4.5rem;
+  overflow: hidden;
+}
+.slide.active { display: flex; }
+
+/* section label strip */
+.section-label {
+  font-size: 0.72rem;
+  text-transform: uppercase;
+  letter-spacing: 0.14em;
+  font-weight: 600;
+  margin-bottom: 1.6rem;
+  padding-bottom: 0.5rem;
+  border-bottom: 1px solid rgba(0,0,0,0.10);
+}
+.blue  .section-label { color: #2a5fd4; }
+.orange .section-label { color: #c95f2e; }
+.green  .section-label { color: #2a8a5a; }
+.purple .section-label { color: #7050c8; }
+
+/* slide body */
+.slide-body {
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  justify-content: center;
+  gap: 1.2rem;
+}
+
+/* title slide */
+.slide.title-slide {
+  justify-content: center;
+  align-items: flex-start;
+  background: linear-gradient(135deg, #eef1fb 0%, #e4eaf8 100%);
+}
+.slide.title-slide .main-title {
+  font-size: 4.2rem;
+  font-weight: 700;
+  color: #0e1420;
+  line-height: 1.15;
+  max-width: 16ch;
+}
+.slide.title-slide .subtitle {
+  font-size: 1.9rem;
+  color: #4060a8;
+  margin-top: 0.8rem;
+  font-weight: 400;
+}
+.slide.title-slide .presenter {
+  font-size: 1.35rem;
+  color: #7080a8;
+  margin-top: 2rem;
+}
+
+/* headings */
+h2 {
+  font-size: 2rem;
+  font-weight: 700;
+  color: #0e1420;
+  line-height: 1.2;
+}
+
+/* bullets */
+ul.bullets {
+  list-style: none;
+  display: flex;
+  flex-direction: column;
+  gap: 0.8rem;
+  padding: 0;
+}
+ul.bullets li {
+  font-size: 1.25rem;
+  color: #2a3050;
+  padding-left: 1.6rem;
+  position: relative;
+  line-height: 1.55;
+}
+ul.bullets li::before {
+  content: '•';
+  position: absolute;
+  left: 0;
+  color: #8090b8;
+}
+ul.bullets li.accent { color: #0e1420; font-weight: 500; }
+ul.bullets li b { color: #0e1420; }
+.blue  ul.bullets li.accent::before { color: #2a5fd4; }
+.orange ul.bullets li.accent::before { color: #c95f2e; }
+.green  ul.bullets li.accent::before { color: #2a8a5a; }
+.purple ul.bullets li.accent::before { color: #7050c8; }
+
+/* tip box */
+.tip-box {
+  background: rgba(42,138,90,0.08);
+  border-left: 3px solid #2a8a5a;
+  border-radius: 4px;
+  padding: 0.9rem 1.2rem;
+  font-size: 1.1rem;
+  color: #1a4a32;
+  line-height: 1.65;
+  margin-top: 0.4rem;
+}
+.tip-box b, .tip-box strong { color: #0e2a1e; }
+
+/* callout / detection box */
+.detect-box {
+  background: rgba(201,95,46,0.07);
+  border-left: 3px solid #c95f2e;
+  border-radius: 4px;
+  padding: 0.75rem 1.2rem;
+  font-size: 1.05rem;
+  color: #5a2010;
+  line-height: 1.6;
+}
+.detect-box b { color: #3a1008; }
+
+/* example block */
+.example-block {
+  background: #f0f2f8;
+  border-radius: 6px;
+  padding: 0.85rem 1.2rem;
+  font-family: 'Fira Code', 'Cascadia Code', 'Courier New', monospace;
+  font-size: 0.98rem;
+  color: #1a6030;
+  line-height: 1.7;
+  margin-top: 0.3rem;
+}
+.example-block .comment { color: #7080a0; }
+
+/* two-col layout */
+.two-col {
+  display: grid;
+  grid-template-columns: 1fr 1.1fr;
+  gap: 2.5rem;
+  align-items: center;
+}
+.two-col.text-heavy { grid-template-columns: 1.2fr 1fr; }
+
+/* ─── NOTES ─────────────────────────────────────────────── */
+aside.notes { display: none; }
+
+body.notes-visible .slide.active { right: 33.33vw; }
+
+#notes-panel {
+  display: none;
+  position: fixed;
+  top: 0;
+  right: 0;
+  width: 33.33vw;
+  bottom: 3rem;
+  background: #f8f9fd;
+  border-left: 1px solid #cdd3e8;
+  overflow-y: auto;
+  z-index: 150;
+  padding: 0.8rem 1.2rem 1.5rem;
+  box-sizing: border-box;
+}
+body.notes-visible #notes-panel { display: block; }
+
+#notes-controls {
+  display: flex;
+  justify-content: flex-end;
+  gap: 0.4rem;
+  position: sticky;
+  top: 0;
+  background: #f8f9fd;
+  padding-bottom: 0.5rem;
+  border-bottom: 1px solid #dde2f0;
+  margin-bottom: 0.8rem;
+}
+#notes-controls button {
+  background: transparent;
+  border: 1px solid #b0bcd8;
+  color: #4a5880;
+  padding: 0.2rem 0.65rem;
+  border-radius: 4px;
+  cursor: pointer;
+  font-size: 0.8rem;
+  transition: all 0.15s;
+}
+#notes-controls button:hover { border-color: #2a5fd4; color: #2a5fd4; }
+
+#notes-content {
+  font-size: 14pt;
+  color: #2a3050;
+  line-height: 1.85;
+  white-space: pre-wrap;
+}
+
+/* ─── NAVIGATION ─────────────────────────────────────────── */
+#nav {
+  position: fixed;
+  bottom: 0; left: 0; right: 0;
+  height: 3rem;
+  display: flex;
+  justify-content: center;
+  align-items: center;
+  gap: 1.2rem;
+  background: rgba(240,242,248,0.92);
+  backdrop-filter: blur(4px);
+  z-index: 200;
+  border-top: 1px solid rgba(0,0,0,0.08);
+}
+#nav button {
+  background: transparent;
+  border: 1px solid #b0bcd8;
+  color: #4a5880;
+  padding: 0.3rem 0.9rem;
+  border-radius: 4px;
+  cursor: pointer;
+  font-size: 0.85rem;
+  transition: all 0.15s;
+}
+#nav button:hover { border-color: #2a5fd4; color: #2a5fd4; }
+#counter { color: #7080a8; font-size: 0.85rem; min-width: 4.5rem; text-align: center; }
+
+/* ─── SLIDE TIMER ───────────────────────────────────────── */
+#slide-time {
+  position: fixed;
+  bottom: 3.6rem;
+  right: 1rem;
+  font-size: 0.72rem;
+  color: rgba(0,0,0,0.18);
+  font-family: 'Fira Code', 'Cascadia Code', 'Courier New', monospace;
+  letter-spacing: 0.05em;
+  z-index: 100;
+  pointer-events: none;
+}
+
+/* ─── BLINKING CURSOR ───────────────────────────────────── */
+@keyframes blink { 0%, 100% { opacity: 1; } 50% { opacity: 0; } }
+.blink-cursor { animation: blink 1.1s step-start infinite; }
+
+/* ─── PRINT ─────────────────────────────────────────────── */
+@media print {
+  html, body { overflow: visible; height: auto; background: white; color: #111; }
+  #nav { display: none; }
+  .slide {
+    display: block !important;
+    position: relative !important;
+    page-break-after: always;
+    background: white !important;
+    padding: 1.25rem 1.5rem !important;
+    overflow: visible !important;
+    min-height: auto;
+  }
+  .slide.title-slide { background: white !important; }
+  .slide.title-slide .main-title { color: #111 !important; font-size: 1.8rem !important; }
+  .slide.title-slide .subtitle { color: #444 !important; }
+  .slide.title-slide .presenter { color: #666 !important; }
+  .section-label { color: #555 !important; border-bottom-color: #ccc !important; }
+  h2 { color: #111 !important; font-size: 1.3rem !important; margin-bottom: 0.5rem; }
+  ul.bullets li { font-size: 0.9rem !important; color: #222 !important; }
+  ul.bullets li::before { color: #555 !important; }
+  .tip-box { background: #f0f8f4 !important; border-left-color: #2a7a54 !important; font-size: 0.85rem !important; color: #333 !important; }
+  .tip-box b, .tip-box strong { color: #111 !important; }
+  .detect-box { background: #fdf0eb !important; border-left-color: #a04020 !important; font-size: 0.85rem !important; color: #333 !important; }
+  .detect-box b { color: #222 !important; }
+  .example-block { background: #f5f5f5 !important; color: #333 !important; font-size: 0.82rem !important; }
+  .slide-body { justify-content: flex-start !important; gap: 0.6rem !important; }
+  svg text { fill: #111 !important; }
+  svg line, svg path, svg polyline { stroke-opacity: 0.7; }
+  aside.notes {
+    display: block !important;
+    background: #fffde7 !important;
+    color: #333 !important;
+    border-top: 2px solid #ccc !important;
+    margin-top: 0.75rem !important;
+    font-size: 0.82rem !important;
+    padding: 0.75rem 1rem !important;
+  }
+}
+
+</style>
+</head>
+<body>
+
+<!-- ═══════════════════════════════════════════════════════
+     TITLE
+═══════════════════════════════════════════════════════ -->
+<div class="slide blue title-slide active" id="s1">
+  <div class="slide-body">
+    <p class="main-title">The Curse of Unbounded Contexts</p>
+    <p class="subtitle">Using Domains as LLM Consumers</p>
+    <p class="presenter">Chelsea Troy</p>
+  </div>
+  <aside class="notes">
+    Hi everyone. My name is Chelsea Troy. I work as an ML Ops engineer, but I teach CS masters' students, and in those two capacities I've done, and researched, and seen a lot of the ways that LLMs get incorporated into production software engineering.
+  </aside>
+</div>
+
+<!-- ═══════════════════════════════════════════════════════
+     EXAMPLES HOOK
+═══════════════════════════════════════════════════════ -->
+<div class="slide blue" id="s1b">
+  <div class="section-label">Examples</div>
+  <div class="slide-body">
+    <div style="display:grid;grid-template-columns:1fr 1fr;gap:2rem;align-items:start">
+
+      <!-- Example 1: vocabulary mismatch -->
+      <div>
+        <p style="font-size:0.8rem;text-transform:uppercase;letter-spacing:0.1em;color:#2a5fd4;margin-bottom:0.75rem;font-weight:600">Vocabulary mismatch</p>
+        <div style="display:flex;flex-direction:column;gap:0.5rem;font-size:0.95rem">
+          <div style="background:#dde4f4;border-radius:6px 6px 6px 2px;padding:0.6rem 0.9rem;color:#2a3050;max-width:90%">
+            "Can you help me optimize <b style="color:#0e1420">the model</b>?"
+          </div>
+          <div style="background:#ddf0e5;border-radius:6px 6px 2px 6px;padding:0.6rem 0.9rem;color:#1a4a28;max-width:90%;align-self:flex-end">
+            "Sure! In your Django ORM model, I'd start by adding <code>select_related</code> on the foreign keys…"
+          </div>
+          <div style="background:#dde4f4;border-radius:6px 6px 6px 2px;padding:0.6rem 0.9rem;color:#2a3050;max-width:90%">
+            "No, I meant the <b style="color:#0e1420">ML pipeline</b>."
+          </div>
+          <div style="background:#ddf0e5;border-radius:6px 6px 2px 6px;padding:0.6rem 0.9rem;color:#1a4a28;max-width:90%;align-self:flex-end">
+            "Ah! For your scikit-learn pipeline, you'll want to look at…"
+          </div>
+        </div>
+      </div>
+
+      <!-- Example 2: constraint buried -->
+      <div>
+        <p style="font-size:0.8rem;text-transform:uppercase;letter-spacing:0.1em;color:#c95f2e;margin-bottom:0.75rem;font-weight:600">Constraint buried</p>
+        <div style="display:flex;flex-direction:column;gap:0.5rem;font-size:0.95rem">
+          <div style="background:#dde4f4;border:1px solid rgba(91,138,240,0.3);border-radius:6px 6px 6px 2px;padding:0.6rem 0.9rem;color:#2a3050;max-width:90%">
+            <span style="color:#2a5fd4;font-size:0.75rem;font-weight:600">MSG 3 &nbsp;·&nbsp; CONSTRAINT</span><br>
+            "Never use exceptions for flow control in this codebase."
+          </div>
+          <div style="color:#303c58;font-size:0.85rem;padding:0.3rem 0.9rem;font-style:italic">
+            … 37 messages of architecture, tests, config …
+          </div>
+          <div style="background:#ddf0e5;border-radius:6px 6px 2px 6px;padding:0.6rem 0.9rem;color:#1a4a28;max-width:90%;align-self:flex-end">
+            "Here's the updated handler — I've used a <code style="color:#c95f2e">try/except</code> block to manage the control flow…"
+          </div>
+        </div>
+      </div>
+
+    </div>
+  </div>
+  <aside class="notes">
+    In that work, I notice a pattern. LLM-assisted work starts off going well — and then, gradually, progressively, goes sideways in ways that are hard to name in the moment. You just notice that the suggestions are getting off, or you're spending more time correcting than building, or you keep typing some version of "no, that's not what I meant."
+
+    I want to show you two examples right at the top so you know exactly what I'm talking about. On the left: you ask about "the model." You know what you mean. The LLM picks a meaning too, confidently. It's the wrong one. Three messages before you're back on track. On the right: you set a constraint at message 3. Clear, explicit, well-stated. Thirty-seven messages later, the LLM is violating it. Not because it forgot. Because the constraint got buried under everything else.
+
+    I think we can apply a framework from domain-driven design — specifically, bounded contexts — to these problems, and look to it for concrete practices for fixing them.
+  </aside>
+</div>
+
+<!-- ═══════════════════════════════════════════════════════
+     WHAT IS A BOUNDED CONTEXT
+═══════════════════════════════════════════════════════ -->
+<div class="slide blue" id="s2">
+  <div class="section-label">I. Setup: What Bounded Contexts Give Us</div>
+  <div class="slide-body">
+    <h2>A bounded context is a semantic boundary</h2>
+    <svg viewBox="0 0 700 220" width="100%" xmlns="http://www.w3.org/2000/svg" style="margin-top:0.5rem">
+      <text x="20"  y="60"  fill="#9090b0" font-size="20" font-style="italic" font-family="Segoe UI,system-ui,sans-serif">customer?</text>
+      <text x="566" y="68"  fill="#9090b0" font-size="17" font-style="italic" font-family="Segoe UI,system-ui,sans-serif">order?</text>
+      <text x="14"  y="190" fill="#9090b0" font-size="15" font-style="italic" font-family="Segoe UI,system-ui,sans-serif">model?</text>
+      <text x="596" y="190" fill="#9090b0" font-size="16" font-style="italic" font-family="Segoe UI,system-ui,sans-serif">token?</text>
+      <rect x="148" y="14" width="404" height="200" rx="10" fill="#eef1fb" stroke="#2a5fd4" stroke-width="2"/>
+      <rect x="210" y="4"  width="160" height="26" rx="5" fill="#2a5fd4"/>
+      <text x="290" y="22" text-anchor="middle" fill="white" font-size="12" font-weight="700" font-family="Segoe UI,system-ui,sans-serif">Billing Context</text>
+      <text x="248" y="68" text-anchor="middle" fill="#1a2060" font-size="14" font-weight="600" font-family="Segoe UI,system-ui,sans-serif">customer</text>
+      <text x="248" y="85" text-anchor="middle" fill="#2a5fd4" font-size="11" font-style="italic" font-family="Segoe UI,system-ui,sans-serif">= a payment account</text>
+      <text x="452" y="68" text-anchor="middle" fill="#1a2060" font-size="14" font-weight="600" font-family="Segoe UI,system-ui,sans-serif">token</text>
+      <text x="452" y="85" text-anchor="middle" fill="#2a5fd4" font-size="11" font-style="italic" font-family="Segoe UI,system-ui,sans-serif">= a JWT</text>
+      <line x1="168" y1="96" x2="532" y2="96" stroke="#d0d8f0" stroke-width="1"/>
+      <text x="248" y="126" text-anchor="middle" fill="#1a2060" font-size="14" font-weight="600" font-family="Segoe UI,system-ui,sans-serif">model</text>
+      <text x="248" y="143" text-anchor="middle" fill="#2a5fd4" font-size="11" font-style="italic" font-family="Segoe UI,system-ui,sans-serif">= ML inference pipeline</text>
+      <text x="452" y="126" text-anchor="middle" fill="#1a2060" font-size="14" font-weight="600" font-family="Segoe UI,system-ui,sans-serif">deployment</text>
+      <text x="452" y="143" text-anchor="middle" fill="#2a5fd4" font-size="11" font-style="italic" font-family="Segoe UI,system-ui,sans-serif">= push to staging cluster</text>
+      <line x1="168" y1="155" x2="532" y2="155" stroke="#d0d8f0" stroke-width="1"/>
+      <text x="350" y="192" text-anchor="middle" fill="#2a3458" font-size="11" font-style="italic" font-family="Segoe UI,system-ui,sans-serif">vocabulary established deliberately — not assumed</text>
+      <text x="76"  y="115" text-anchor="middle" fill="#2a3458" font-size="11" font-family="Segoe UI,system-ui,sans-serif">outside:</text>
+      <text x="76"  y="130" text-anchor="middle" fill="#2a3458" font-size="11" font-family="Segoe UI,system-ui,sans-serif">ambiguous</text>
+      <text x="626" y="115" text-anchor="middle" fill="#2a3458" font-size="11" font-family="Segoe UI,system-ui,sans-serif">outside:</text>
+      <text x="626" y="130" text-anchor="middle" fill="#2a3458" font-size="11" font-family="Segoe UI,system-ui,sans-serif">ambiguous</text>
+    </svg>
+    <p style="font-size:0.95rem;color:#303c58;text-align:center">Adjacent systems can use the same word to mean different things. That's fine. Assuming they agree without checking is not.</p>
+  </div>
+  <aside class="notes">
+    A bounded context is a concept from domain-driven design — specifically from Eric Evans's work. The core idea is that you can draw a boundary around a region of your system, and inside that boundary, terms have precise, agreed-upon meanings. "Customer" means one specific thing here. "Order" means one specific thing here. You've established a ubiquitous language — a shared vocabulary that everyone working inside that context uses consistently.
+
+    Here's the crucial flip side: you explicitly do NOT assume that vocabulary transfers outside the boundary. Adjacent systems, adjacent teams, can use the same words to mean completely different things. That's not a problem — it's expected. The problem only arises when you forget the boundaries exist and act like "Customer" in Billing is the same object as "Customer" in Sales.
+
+    I want to spend two more slides on this because the concrete example makes the whole rest of the talk much clearer.
+  </aside>
+</div>
+
+<!-- ═══════════════════════════════════════════════════════
+     CUSTOMER EXAMPLE (SVG)
+═══════════════════════════════════════════════════════ -->
+<div class="slide blue" id="s3">
+  <div class="section-label">I. Setup: What Bounded Contexts Give Us</div>
+  <div class="slide-body">
+    <h2>Same word. Three different models.</h2>
+    <svg viewBox="0 0 740 280" width="100%" xmlns="http://www.w3.org/2000/svg" style="margin-top:0.5rem">
+      <!-- Sales -->
+      <g>
+        <rect x="10" y="0" width="210" height="265" rx="8" fill="#dde4f4" stroke="#2a5fd4" stroke-width="1.5"/>
+        <rect x="10" y="0" width="210" height="46" rx="8" fill="#2a5fd4"/>
+        <rect x="10" y="34" width="210" height="12" fill="#2a5fd4"/>
+        <text x="115" y="30" text-anchor="middle" fill="white" font-size="15" font-weight="700" font-family="Segoe UI,system-ui,sans-serif">Sales</text>
+        <text x="115" y="74" text-anchor="middle" fill="#0e1420" font-size="18" font-weight="700" font-family="Segoe UI,system-ui,sans-serif">Customer</text>
+        <line x1="30" y1="88" x2="200" y2="88" stroke="#2e3a5e" stroke-width="1"/>
+        <text x="115" y="112" text-anchor="middle" fill="#3a50a0" font-size="13" font-family="Segoe UI,system-ui,sans-serif">lead score</text>
+        <text x="115" y="136" text-anchor="middle" fill="#3a50a0" font-size="13" font-family="Segoe UI,system-ui,sans-serif">pipeline stage</text>
+        <text x="115" y="160" text-anchor="middle" fill="#3a50a0" font-size="13" font-family="Segoe UI,system-ui,sans-serif">potential value</text>
+        <text x="115" y="184" text-anchor="middle" fill="#3a50a0" font-size="13" font-family="Segoe UI,system-ui,sans-serif">contact history</text>
+        <line x1="30" y1="202" x2="200" y2="202" stroke="#2e3a5e" stroke-width="1"/>
+        <text x="115" y="232" text-anchor="middle" fill="#2a5fd4" font-size="12" font-style="italic" font-family="Segoe UI,system-ui,sans-serif">a lead with potential</text>
+      </g>
+      <!-- Shipping -->
+      <g>
+        <rect x="265" y="0" width="210" height="265" rx="8" fill="#dde4f4" stroke="#2a8a5a" stroke-width="1.5"/>
+        <rect x="265" y="0" width="210" height="46" rx="8" fill="#2a8a5a"/>
+        <rect x="265" y="34" width="210" height="12" fill="#2a8a5a"/>
+        <text x="370" y="30" text-anchor="middle" fill="white" font-size="15" font-weight="700" font-family="Segoe UI,system-ui,sans-serif">Shipping</text>
+        <text x="370" y="74" text-anchor="middle" fill="#0e1420" font-size="18" font-weight="700" font-family="Segoe UI,system-ui,sans-serif">Customer</text>
+        <line x1="285" y1="88" x2="455" y2="88" stroke="#2e3a5e" stroke-width="1"/>
+        <text x="370" y="112" text-anchor="middle" fill="#3a50a0" font-size="13" font-family="Segoe UI,system-ui,sans-serif">shipping address</text>
+        <text x="370" y="136" text-anchor="middle" fill="#3a50a0" font-size="13" font-family="Segoe UI,system-ui,sans-serif">order history</text>
+        <text x="370" y="160" text-anchor="middle" fill="#3a50a0" font-size="13" font-family="Segoe UI,system-ui,sans-serif">delivery preferences</text>
+        <text x="370" y="184" text-anchor="middle" fill="#3a50a0" font-size="13" font-family="Segoe UI,system-ui,sans-serif">return record</text>
+        <line x1="285" y1="202" x2="455" y2="202" stroke="#2e3a5e" stroke-width="1"/>
+        <text x="370" y="232" text-anchor="middle" fill="#2a8a5a" font-size="12" font-style="italic" font-family="Segoe UI,system-ui,sans-serif">an address + orders</text>
+      </g>
+      <!-- Billing -->
+      <g>
+        <rect x="520" y="0" width="210" height="265" rx="8" fill="#dde4f4" stroke="#c95f2e" stroke-width="1.5"/>
+        <rect x="520" y="0" width="210" height="46" rx="8" fill="#c95f2e"/>
+        <rect x="520" y="34" width="210" height="12" fill="#c95f2e"/>
+        <text x="625" y="30" text-anchor="middle" fill="white" font-size="15" font-weight="700" font-family="Segoe UI,system-ui,sans-serif">Billing</text>
+        <text x="625" y="74" text-anchor="middle" fill="#0e1420" font-size="18" font-weight="700" font-family="Segoe UI,system-ui,sans-serif">Customer</text>
+        <line x1="540" y1="88" x2="710" y2="88" stroke="#2e3a5e" stroke-width="1"/>
+        <text x="625" y="112" text-anchor="middle" fill="#3a50a0" font-size="13" font-family="Segoe UI,system-ui,sans-serif">payment method</text>
+        <text x="625" y="136" text-anchor="middle" fill="#3a50a0" font-size="13" font-family="Segoe UI,system-ui,sans-serif">invoice history</text>
+        <text x="625" y="160" text-anchor="middle" fill="#3a50a0" font-size="13" font-family="Segoe UI,system-ui,sans-serif">credit status</text>
+        <text x="625" y="184" text-anchor="middle" fill="#3a50a0" font-size="13" font-family="Segoe UI,system-ui,sans-serif">tax ID</text>
+        <line x1="540" y1="202" x2="710" y2="202" stroke="#2e3a5e" stroke-width="1"/>
+        <text x="625" y="232" text-anchor="middle" fill="#c95f2e" font-size="12" font-style="italic" font-family="Segoe UI,system-ui,sans-serif">a payment account</text>
+      </g>
+    </svg>
+  </div>
+  <aside class="notes">
+    Here's the classic example. The word "Customer" appears everywhere in most software systems. But it doesn't mean the same thing in every part of those systems.
+
+    In Sales, a customer is a lead — someone with a pipeline stage, a lead score, a potential value. That object doesn't have a shipping address. It doesn't have a payment method. It has a probability of converting and a contact history.
+
+    In Shipping, the same word means something completely different: an address, an order record, a set of delivery preferences. Nobody in Shipping cares about lead scores. They care about whether the address is valid and what the return history looks like.
+
+    In Billing, it's a payment account — a tax ID, credit status, invoice history.
+
+    Domain-driven design's answer to this is not: pick one definition and force everyone to use it. That causes the same kind of pain as trying to write code that serves every use case with a single class. DDD says: let these diverge. They're three different models that happen to share a name in English. Own that. Name the contexts. Establish the vocabulary within each one deliberately. And — critically — don't assume vocabulary from one context means the same thing in another.
+
+    That's the payoff I want to talk about next.
+  </aside>
+</div>
+
+<!-- ═══════════════════════════════════════════════════════
+     UBIQUITOUS LANGUAGE: THE PAYOFF
+═══════════════════════════════════════════════════════ -->
+<div class="slide blue" id="s4">
+  <div class="section-label">I. Setup: What Bounded Contexts Give Us</div>
+  <div class="slide-body">
+    <h2>The payoff: scoped, coherent conversation</h2>
+    <svg viewBox="0 0 680 110" width="100%" xmlns="http://www.w3.org/2000/svg" style="margin:0.8rem 0 0.2rem">
+      <rect x="6"   y="16" width="188" height="76" rx="8" fill="#eef1fb" stroke="#2a5fd4" stroke-width="1.5"/>
+      <text x="100" y="50" text-anchor="middle" fill="#2a5fd4" font-size="13" font-weight="700" font-family="Segoe UI,system-ui,sans-serif">Precise terms</text>
+      <text x="100" y="68" text-anchor="middle" fill="#4a5880" font-size="10.5" font-family="Segoe UI,system-ui,sans-serif">established deliberately</text>
+      <text x="100" y="82" text-anchor="middle" fill="#4a5880" font-size="10.5" font-family="Segoe UI,system-ui,sans-serif">within a named boundary</text>
+      <line x1="194" y1="54" x2="234" y2="54" stroke="#8090b8" stroke-width="2"/>
+      <polygon points="228,49 238,54 228,59" fill="#8090b8"/>
+      <rect x="242" y="16" width="188" height="76" rx="8" fill="#eef1fb" stroke="#2a8a5a" stroke-width="1.5"/>
+      <text x="336" y="50" text-anchor="middle" fill="#2a8a5a" font-size="13" font-weight="700" font-family="Segoe UI,system-ui,sans-serif">Precise questions</text>
+      <text x="336" y="68" text-anchor="middle" fill="#4a5880" font-size="10.5" font-family="Segoe UI,system-ui,sans-serif">no vocabulary negotiation</text>
+      <text x="336" y="82" text-anchor="middle" fill="#4a5880" font-size="10.5" font-family="Segoe UI,system-ui,sans-serif">mid-conversation</text>
+      <line x1="430" y1="54" x2="470" y2="54" stroke="#8090b8" stroke-width="2"/>
+      <polygon points="464,49 474,54 464,59" fill="#8090b8"/>
+      <rect x="478" y="16" width="188" height="76" rx="8" fill="#eef1fb" stroke="#c95f2e" stroke-width="1.5"/>
+      <text x="572" y="50" text-anchor="middle" fill="#c95f2e" font-size="13" font-weight="700" font-family="Segoe UI,system-ui,sans-serif">Precise answers</text>
+      <text x="572" y="68" text-anchor="middle" fill="#4a5880" font-size="10.5" font-family="Segoe UI,system-ui,sans-serif">cross-boundary translations</text>
+      <text x="572" y="82" text-anchor="middle" fill="#4a5880" font-size="10.5" font-family="Segoe UI,system-ui,sans-serif">explicit, not invisible</text>
+    </svg>
+    <div class="tip-box" style="margin-top:0.75rem">
+      The problem isn't ambiguous words. The problem is <b>unacknowledged ambiguous words</b> — everyone assumes the other person means the same thing they do.
+    </div>
+  </div>
+  <aside class="notes">
+    The payoff of bounded contexts is really about scoped, coherent conversation. When you've established the ubiquitous language within a context — when you've said "in this team, 'Customer' means X" — you get precise conversations. Your questions are precise. The answers you get back are precise. And when you're working with someone from a different bounded context, you know to make the translation explicit. You don't assume that their "Customer" is your "Customer."
+
+    The key insight here — and I want to sit on this for a second because the rest of the talk depends on it — is that the problem isn't ambiguous words per se. Ambiguity is unavoidable. The problem is unacknowledged ambiguity. It's when both parties are confident they mean the same thing and they don't. That's where you get the really expensive bugs: the kind where everything looks correct on both sides of the integration and the data is silently wrong.
+
+    Keep that framing in mind: unacknowledged ambiguity. Because that's exactly what happens when you start working with LLMs without bounded context discipline.
+  </aside>
+</div>
+
+<!-- ═══════════════════════════════════════════════════════
+     THE CURSE
+═══════════════════════════════════════════════════════ -->
+<div class="slide orange" id="s5">
+  <div class="section-label">II. The Curse: Why LLMs Encourage the Opposite</div>
+  <div class="slide-body">
+    <h2>The interface invites unboundedness</h2>
+    <div style="display:grid;grid-template-columns:1fr 1.6fr;gap:2.5rem;align-items:center;margin-top:0.85rem">
+      <div style="display:flex;flex-direction:column;align-items:center">
+        <div style="background:#eef1fb;border:1px solid #b0bcd8;border-radius:8px;padding:1.5rem 1.8rem;text-align:center;width:100%">
+          <div class="blink-cursor" style="font-size:2.2rem;color:#2a5fd4;font-family:monospace;letter-spacing:0.05em">▊</div>
+          <p style="font-size:0.82rem;color:#2a3458;margin-top:0.6rem;line-height:1.7">no boundary set<br>no scope defined<br>no vocabulary established<br><em style="color:#8090b8">just: keep typing</em></p>
+        </div>
+      </div>
+      <div style="display:flex;flex-direction:column;gap:0.32rem">
+        <div style="background:rgba(42,95,212,0.18);border-left:3px solid #5b8af0;border-radius:3px;padding:0.38rem 0.8rem;font-size:0.88rem;color:#2a3a80">msgs 1–5 · debug a function</div>
+        <div style="background:rgba(42,95,212,0.10);border-left:3px solid rgba(91,138,240,0.35);border-radius:3px;padding:0.38rem 0.8rem;font-size:0.88rem;color:#3a50a0">msg 6 · is this architecture even right?</div>
+        <div style="background:rgba(201,95,46,0.15);border-left:3px solid #f0855b;border-radius:3px;padding:0.38rem 0.8rem;font-size:0.88rem;color:#804020">msgs 7–11 · redesign the ingestion layer</div>
+        <div style="background:rgba(42,138,90,0.12);border-left:3px solid #5bbf8a;border-radius:3px;padding:0.38rem 0.8rem;font-size:0.88rem;color:#1a6040">msgs 12–18 · write tests for the original fn</div>
+        <div style="background:rgba(112,80,200,0.10);border-left:3px solid #a78bf0;border-radius:3px;padding:0.38rem 0.8rem;font-size:0.88rem;color:#4030a0">msg 19 · wait, what about that other file?</div>
+        <div style="padding:0.25rem 0.8rem;font-size:0.82rem;color:#5060a0;font-style:italic">still one conversation.</div>
+      </div>
+    </div>
+  </div>
+  <aside class="notes">
+    Here's the problem. LLMs, as they're currently presented to us, feel like one big infinite conversation. The interface is a text box and a blinking cursor. There's no tooling that teaches you context discipline. There's no prompt that says "wait, are you in the same domain as 10 messages ago?" There's nothing that surfaces when a conversation has grown so broad that it's lost coherence.
+
+    The blinking cursor is a UI affordance. It's there because the designers wanted you to feel invited to type. But it has this side effect of implying: this is a continuous, coherent context, and you should just keep adding to it. It doesn't say: scope this first. It doesn't say: establish your vocabulary. It says: keep going.
+
+    And so we get this pattern that I think most of us recognize. You open a conversation to debug a function. That surfaces an architecture question, which you ask. That leads you to think about test coverage, so you ask about that too. Then you remember a completely different file you've been meaning to look at, and you ask about that. Still one conversation. And you've just built a context that spans four different problem domains without establishing the vocabulary for any of them.
+
+    That's the curse. The interface creates unboundedness, and then we pay for it. Let me show you the four specific ways it costs us.
+  </aside>
+</div>
+
+<!-- ═══════════════════════════════════════════════════════
+     FAILURE MODE 1: LANGUAGE MISMATCH (SVG)
+═══════════════════════════════════════════════════════ -->
+<div class="slide orange" id="s7">
+  <div class="section-label">III. Failure Mode 1: No Ubiquitous Language</div>
+  <div class="slide-body two-col">
+    <div>
+      <h2>Language mismatch at the start</h2>
+      <ul class="bullets" style="margin-top:1rem">
+        <li>You ask about "the model," confident it's clear</li>
+        <li>The LLM picks its own meaning, also confident</li>
+        <li class="accent">Neither of you flags the ambiguity</li>
+        <li>Three suggestions deep before you notice the mismatch</li>
+      </ul>
+    </div>
+    <svg viewBox="0 0 340 300" width="100%" xmlns="http://www.w3.org/2000/svg">
+      <!-- Center node -->
+      <circle cx="170" cy="150" r="52" fill="rgba(42,95,212,0.12)" stroke="#2a5fd4" stroke-width="2"/>
+      <text x="170" y="146" text-anchor="middle" fill="#0e1420" font-size="18" font-weight="700" font-family="Segoe UI,system-ui,sans-serif">model</text>
+      <text x="170" y="166" text-anchor="middle" fill="#4a5880" font-size="11" font-family="Segoe UI,system-ui,sans-serif">which one?</text>
+      <!-- Spoke 1: top — ML pipeline -->
+      <line x1="170" y1="98" x2="170" y2="40" stroke="#4a5580" stroke-width="1.5" stroke-dasharray="5,3"/>
+      <rect x="95" y="8" width="152" height="32" rx="4" fill="#dde4f4" stroke="#2a8a5a" stroke-width="1.5"/>
+      <text x="171" y="28" text-anchor="middle" fill="#2a8a5a" font-size="13" font-family="Segoe UI,system-ui,sans-serif">ML pipeline</text>
+      <!-- Spoke 2: bottom-left — ORM -->
+      <line x1="124" y1="192" x2="78" y2="254" stroke="#4a5580" stroke-width="1.5" stroke-dasharray="5,3"/>
+      <rect x="5" y="248" width="148" height="32" rx="4" fill="#dde4f4" stroke="#c95f2e" stroke-width="1.5"/>
+      <text x="79" y="268" text-anchor="middle" fill="#c95f2e" font-size="13" font-family="Segoe UI,system-ui,sans-serif">ORM / data model</text>
+      <!-- Spoke 3: bottom-right — View Model -->
+      <line x1="216" y1="192" x2="262" y2="254" stroke="#4a5580" stroke-width="1.5" stroke-dasharray="5,3"/>
+      <rect x="187" y="248" width="148" height="32" rx="4" fill="#dde4f4" stroke="#7050c8" stroke-width="1.5"/>
+      <text x="261" y="268" text-anchor="middle" fill="#7050c8" font-size="13" font-family="Segoe UI,system-ui,sans-serif">view model / DTO</text>
+      <!-- question mark -->
+      <text x="145" y="74" fill="#c95f2e" font-size="26" font-weight="700" font-family="Segoe UI,system-ui,sans-serif">?</text>
+    </svg>
+  </div>
+  <aside class="notes">
+    The first failure mode is language mismatch at the start. This is the most common one, and it's the most insidious because it's invisible. You ask about "the model": perfectly natural thing to say in an engineering conversation. You know exactly which model you mean. The LLM picks a meaning. Also confidently. Maybe it picks your ML pipeline because that's what it figures engineers mean in this kind of conversation. Maybe it picks the ORM layer because you mentioned a database two messages ago. Maybe it picks a view model because you showed it some React code.
+
+    Neither party flags the ambiguity. You're both confident. The LLM gives you a perfectly coherent response about the model as it understood it, and you read it through the lens of the model you meant. And it sounds... almost right? But the suggestions don't quite fit. They're solving a slightly different problem than you thought you asked. And you don't figure out why until you're three or four suggestions deep and have already integrated some of them into your thinking.
+
+    This is exactly what happens in inter-team software work too. Two teams use "Customer" all the time. They both know what it means. They both know the other team uses it. And nobody thinks to check whether they mean the same thing until there's a production incident.
+
+    Here's the fix.
+  </aside>
+</div>
+
+<div class="slide orange" id="s8b" data-extra-seconds="15">
+  <div class="slide-body" style="align-items:center;justify-content:center">
+    <img src="agentic-coding-skill.png" alt="Agentic coding skill" style="max-width:100%;max-height:100%;object-fit:contain;border-radius:8px;box-shadow:0 4px 24px rgba(0,0,0,0.12)">
+  </div>
+  <aside class="notes"></aside>
+</div>
+
+<!-- ═══════════════════════════════════════════════════════
+     FM1 FIX: TERMINOLOGY BLOCK
+═══════════════════════════════════════════════════════ -->
+<div class="slide orange" id="s8">
+  <div class="section-label">III. Failure Mode 1: Fix</div>
+  <div class="slide-body">
+    <h2>The Terminology Block</h2>
+    <p style="font-size:1.15rem;color:#2a3050;margin-bottom:0.75rem">Write your ubiquitous language before you ask your first question.</p>
+    <div class="example-block">
+      <span class="comment">// Before asking anything:</span><br>
+      "In this conversation:<br>
+      &nbsp;&nbsp;'model' = our scikit-learn inference pipeline<br>
+      &nbsp;&nbsp;'feature' = a column in the feature store<br>
+      &nbsp;&nbsp;'deployment' = a push to the staging cluster"
+    </div>
+    <div class="detect-box" style="margin-top:0.8rem">
+      <b>How to detect the mismatch:</b> At the first surprise, ask "what did you understand 'X' to mean?"
+    </div>
+    <div class="tip-box" style="margin-top:0.6rem">
+      30 seconds at the start. Takes less time than the first correction will.
+    </div>
+  </div>
+  <aside class="notes">
+    The fix is what I call a terminology block. Before you ask your first substantive question, write 3-5 lines defining the vocabulary that could be ambiguous in your context. You are literally writing the ubiquitous language of your bounded conversation. "In this conversation, 'model' means our scikit-learn inference pipeline. 'Feature' means a column in the feature store. 'Deployment' means a push to staging." Done. That's your context definition.
+
+    It takes 30 seconds. It takes less time than the first correction will. And it frames the entire conversation before any ambiguity has had a chance to propagate.
+
+    There's also a reactive version of this tip. If you didn't do the terminology block and you notice the first response doesn't quite fit — don't correct it immediately. Instead, ask: "What did you understand 'model' to mean in that answer?" Let it show you its vocabulary. You'll see the gap clearly in the answer. Then you correct it once, explicitly, and move forward with the vocabulary aligned.
+
+    The pattern I want to avoid is the one where you correct the surface-level answer — "no, not like that" — without fixing the underlying vocabulary mismatch. That just makes the LLM try harder to give you the same kind of answer. Fix the vocabulary first.
+  </aside>
+</div>
+
+
+
+<!-- ═══════════════════════════════════════════════════════
+     FAILURE MODE 2: DETAIL LOSS (SVG)
+═══════════════════════════════════════════════════════ -->
+<div class="slide orange" id="s9">
+  <div class="section-label">III. Failure Mode 2: Context Degrades Its Own Signal</div>
+  <div class="slide-body two-col">
+    <div>
+      <h2>Detail loss mid-conversation</h2>
+      <ul class="bullets" style="margin-top:1rem">
+        <li><b>msg 3:</b> "never use exceptions for flow control"</li>
+        <li><b>msg 40:</b> LLM suggests try/except for flow control</li>
+        <li class="accent">The constraint didn't vanish. It got buried.</li>
+        <li>The more context you add, the less signal each early message carries</li>
+      </ul>
+    </div>
+    <svg viewBox="0 0 390 240" width="100%" xmlns="http://www.w3.org/2000/svg">
+      <!-- Chart area: x 50-330, y 10-190 -->
+      <!-- Y axis -->
+      <line x1="50" y1="10" x2="50" y2="190" stroke="#9090b8" stroke-width="1.5"/>
+      <!-- X axis -->
+      <line x1="50" y1="190" x2="330" y2="190" stroke="#9090b8" stroke-width="1.5"/>
+      <!-- Y labels -->
+      <text x="44" y="14" text-anchor="end" fill="#4a5880" font-size="9" font-family="Segoe UI,system-ui,sans-serif">high</text>
+      <text x="44" y="194" text-anchor="end" fill="#4a5880" font-size="9" font-family="Segoe UI,system-ui,sans-serif">low</text>
+      <text x="14" y="105" text-anchor="middle" fill="#4a5880" font-size="9" font-family="Segoe UI,system-ui,sans-serif" transform="rotate(-90,14,105)">constraint signal</text>
+      <!-- X labels -->
+      <text x="50" y="204" text-anchor="middle" fill="#4a5880" font-size="9" font-family="Segoe UI,system-ui,sans-serif">1</text>
+      <text x="120" y="204" text-anchor="middle" fill="#4a5880" font-size="9" font-family="Segoe UI,system-ui,sans-serif">10</text>
+      <text x="190" y="204" text-anchor="middle" fill="#4a5880" font-size="9" font-family="Segoe UI,system-ui,sans-serif">20</text>
+      <text x="260" y="204" text-anchor="middle" fill="#4a5880" font-size="9" font-family="Segoe UI,system-ui,sans-serif">30</text>
+      <text x="330" y="204" text-anchor="middle" fill="#4a5880" font-size="9" font-family="Segoe UI,system-ui,sans-serif">40</text>
+      <text x="190" y="218" text-anchor="middle" fill="#4a5880" font-size="9" font-family="Segoe UI,system-ui,sans-serif">message number</text>
+      <!-- Gridlines -->
+      <line x1="50" y1="100" x2="330" y2="100" stroke="#d0d8f0" stroke-width="1" stroke-dasharray="3,3"/>
+      <!-- Declining curve: starts at ~(67,18) = msg 3 near top, ends at (330,178) = msg 40 near bottom -->
+      <path d="M67,18 C110,18 150,60 200,110 S280,168 330,178"
+            stroke="#2a5fd4" stroke-width="2.5" fill="none"/>
+      <!-- Start dot + label (connector extended down to clear the curve) -->
+      <circle cx="67" cy="18" r="5" fill="#2a8a5a"/>
+      <line x1="67" y1="23" x2="67" y2="75" stroke="#2a8a5a" stroke-width="1" stroke-dasharray="3,2"/>
+      <text x="70" y="79" fill="#2a8a5a" font-size="9" font-family="Segoe UI,system-ui,sans-serif">"never use exceptions</text>
+      <text x="70" y="90" fill="#2a8a5a" font-size="9" font-family="Segoe UI,system-ui,sans-serif">for flow control" (msg 3)</text>
+      <!-- End dot + label (text moved right of dot into expanded viewBox) -->
+      <circle cx="330" cy="178" r="5" fill="#c95f2e"/>
+      <line x1="335" y1="178" x2="338" y2="178" stroke="#c95f2e" stroke-width="1"/>
+      <text x="340" y="170" fill="#c95f2e" font-size="9" font-family="Segoe UI,system-ui,sans-serif">try/except</text>
+      <text x="340" y="181" fill="#c95f2e" font-size="9" font-family="Segoe UI,system-ui,sans-serif">flow control</text>
+      <text x="340" y="192" fill="#c95f2e" font-size="9" font-family="Segoe UI,system-ui,sans-serif">(msg 40)</text>
+    </svg>
+  </div>
+  <aside class="notes">
+    The second failure mode is detail loss mid-conversation. This one feels different from language mismatch — it's not about ambiguous vocabulary, it's about constraints you've clearly stated being progressively overridden by the weight of everything else you've added since.
+
+    Here's the picture I want you to hold. You state a constraint at message 3. "Never use exceptions for flow control in this codebase." Clear, unambiguous. But as the conversation grows — architecture discussions, test examples, configuration questions — that constraint's relative weight in the context decreases. It's not gone. It's just getting buried under everything else, and by message 40, the LLM is suggesting exactly what you said not to do. Not because it forgot. Because the constraint's signal is now very low relative to the mass of everything else.
+
+    The chart I'm showing here isn't literal — we don't actually have a metric for constraint signal strength. But the shape is real. The longer the conversation, the more the early specific constraints get diluted by the general mass of later content.
+
+    This is actually a property of how attention works in these models. Every message competes for influence on the output. An early constraint competes with 37 later messages. It often loses.
+  </aside>
+</div>
+
+<!-- ═══════════════════════════════════════════════════════
+     HOW IT GOES WRONG (DRIFT EXAMPLE)
+═══════════════════════════════════════════════════════ -->
+<div class="slide orange" id="s6">
+  <div class="section-label">III. Failure Mode 2: Context Degrades Its Own Signal</div>
+  <div class="slide-body">
+    <h2>A session without context discipline</h2>
+    <svg viewBox="0 0 700 140" width="100%" xmlns="http://www.w3.org/2000/svg" style="margin-top:0.75rem;margin-bottom:0.15rem">
+      <rect x="10"  y="42" width="85"  height="36" rx="3 0 0 3" fill="rgba(42,95,212,0.50)"/>
+      <text x="52"  y="63" text-anchor="middle" fill="#1a2060" font-size="8.5" font-family="Segoe UI,system-ui,sans-serif">1–5 debug</text>
+      <rect x="95"  y="42" width="102" height="36" fill="rgba(42,95,212,0.18)"/>
+      <text x="146" y="63" text-anchor="middle" fill="#2a3a90" font-size="8.5" font-family="Segoe UI,system-ui,sans-serif">6–11 arch?</text>
+      <rect x="197" y="42" width="119" height="36" fill="rgba(201,95,46,0.38)"/>
+      <text x="256" y="63" text-anchor="middle" fill="#7a3a1a" font-size="8.5" font-family="Segoe UI,system-ui,sans-serif">12–18 redesign</text>
+      <rect x="316" y="42" width="119" height="36" fill="rgba(42,138,90,0.25)"/>
+      <text x="375" y="63" text-anchor="middle" fill="#1a6040" font-size="8.5" font-family="Segoe UI,system-ui,sans-serif">19–25 tests</text>
+      <rect x="435" y="42" width="255" height="36" rx="0 3 3 0" fill="rgba(140,150,175,0.45)"/>
+      <text x="562" y="63" text-anchor="middle" fill="#484f6a" font-size="8.5" font-family="Segoe UI,system-ui,sans-serif">26–40 · more context, more drift…</text>
+      <line x1="52" y1="40" x2="52" y2="18" stroke="#c95f2e" stroke-width="1.5" stroke-dasharray="3,2"/>
+      <circle cx="52" cy="16" r="3.5" fill="#c95f2e"/>
+      <text x="57" y="13" fill="#c95f2e" font-size="8.5" font-family="Segoe UI,system-ui,sans-serif">msg 3: "no exceptions for flow control"</text>
+      <line x1="688" y1="80" x2="688" y2="106" stroke="#c95f2e" stroke-width="1.5" stroke-dasharray="3,2"/>
+      <circle cx="688" cy="108" r="3.5" fill="#c95f2e"/>
+      <text x="682" y="122" text-anchor="end" fill="#c95f2e" font-size="8.5" font-family="Segoe UI,system-ui,sans-serif">msg 40: try/except for flow control ✗</text>
+    </svg>
+    <div class="detect-box">
+      The constraint didn't disappear from the window. It got buried under everything else.
+    </div>
+  </div>
+  <aside class="notes">
+    Let me walk through a concrete version of what this looks like. You open a conversation to debug a data pipeline function. Fine. By message 6 you've pivoted to an architecture question about scale. That's a different domain. You've mentioned along the way — at message 3, let's say — that in this codebase you never use exceptions for flow control. Important constraint, stated clearly.
+
+    By message 12 you're redesigning the whole ingestion layer. Different domain again. You've asked it to write tests. You've asked it about a deployment configuration. And by message 40, when you get back to the implementation, the LLM is cheerfully suggesting try/except as a flow control mechanism. Exactly the thing you said never to do.
+
+    The constraint didn't disappear. It's still in the context window. It just got buried under thirty-seven messages worth of architecture discussion and test writing and deployment config, and its signal weight relative to everything else is now very low.
+
+    This is the curse in action. One conversation, many domains, no ubiquitous language established in any of them, constraints eroding under the weight of everything else. Let me break this down into four specific failure modes with names.
+  </aside>
+</div>
+
+<!-- ═══════════════════════════════════════════════════════
+     FM2 FIX: CONSTRAINTS FIRST + RE-ANCHOR
+═══════════════════════════════════════════════════════ -->
+<div class="slide orange" id="s10">
+  <div class="section-label">III. Failure Mode 2: Fix</div>
+  <div class="slide-body">
+    <h2>Constraints first. Re-anchor later.</h2>
+    <div style="display:grid;grid-template-columns:auto 1fr;gap:1.5rem;align-items:start;margin-top:0.8rem;margin-bottom:0.5rem">
+      <div style="background:rgba(42,138,90,0.12);border:2px solid #5bbf8a;border-radius:8px;padding:0.9rem 1.1rem;min-width:9rem;text-align:center">
+        <div style="font-size:0.72rem;text-transform:uppercase;letter-spacing:0.1em;color:#2a8a5a;font-weight:700;margin-bottom:0.4rem">Message 1</div>
+        <div style="font-size:0.85rem;color:#1a5040;line-height:1.6">all constraints<br>that must hold<br>for the whole<br>conversation</div>
+      </div>
+      <div style="display:flex;flex-direction:column;gap:0.6rem;padding-top:0.15rem">
+        <div style="display:flex;align-items:center;gap:0.6rem">
+          <div style="flex:1;height:3px;background:rgba(91,191,138,0.3);border-radius:2px"></div>
+          <div style="background:rgba(42,138,90,0.12);border:1px solid rgba(91,191,138,0.35);border-radius:4px;padding:0.25rem 0.7rem;font-size:0.78rem;color:#1a6040;white-space:nowrap">re-anchor @ msg 15–20</div>
+          <div style="flex:1;height:3px;background:rgba(91,191,138,0.15);border-radius:2px"></div>
+        </div>
+        <div style="display:flex;align-items:center;gap:0.6rem">
+          <div style="flex:2;height:3px;background:rgba(91,191,138,0.15);border-radius:2px"></div>
+          <div style="background:rgba(42,138,90,0.12);border:1px solid rgba(91,191,138,0.35);border-radius:4px;padding:0.25rem 0.7rem;font-size:0.78rem;color:#1a6040;white-space:nowrap">re-anchor @ msg 35–40</div>
+          <div style="flex:1;height:3px;background:rgba(91,191,138,0.08);border-radius:2px"></div>
+        </div>
+        <p style="font-size:0.82rem;color:#3a4a60;margin-top:0.1rem">Constraints buried mid-conversation are effectively invisible by message 30.</p>
+      </div>
+    </div>
+    <div class="tip-box" style="margin-top:0.75rem">
+      <b>The Re-Anchor:</b> Every 15–20 messages in a long conversation, send one message restating your key constraints and current goal explicitly.<br><br>
+      <span style="font-style:italic;color:#1a5040">"Reminding you: no exceptions for flow control, targeting Python 3.9, goal is still X."</span>
+    </div>
+    <div class="detect-box" style="margin-top:0.7rem">
+      <b>Signal:</b> You've written some version of "remember, we said X" more than once. That's a signal strength problem.
+    </div>
+  </div>
+  <aside class="notes">
+    Two fixes here. The first is simple: any constraint that needs to hold for the entire conversation should be the first message, or part of the first message, not message 3. Constraints introduced mid-conversation start at a signal disadvantage. Put them first, before anything else has had a chance to dilute them.
+
+    The second fix is the re-anchor. In conversations that run past 15-20 messages, periodically send one message that restates the key constraints and the current goal. "Reminding you: we're not using exceptions for flow control. Python 3.9 target. Goal is still X." This is not redundant. This is maintenance. You're deliberately refreshing the signal weight of the constraints that matter.
+
+    Here's the detection heuristic for when you need to re-anchor: you've written some version of "remember, we said..." more than once. That's not a comprehension failure on the LLM's part. It's a signal strength failure. The fix isn't to correct more clearly — the fix is to re-anchor. There's a difference between "the model doesn't understand my constraint" and "my constraint has been diluted by context mass." The second one is fixed by re-anchoring, not by phrasing the correction more forcefully.
+
+    And I want to call out a framing shift here. The re-anchor is also useful for you. Every 15-20 messages is a good time to ask yourself whether the constraints you set at message 3 still reflect what you actually want. Context evolves. You're allowed to update your constraints. The re-anchor is a forcing function for that.
+  </aside>
+</div>
+
+<!-- ═══════════════════════════════════════════════════════
+     FAILURE MODE 3: GOALS BLEEDING (SVG)
+═══════════════════════════════════════════════════════ -->
+<div class="slide orange" id="s11">
+  <div class="section-label">III. Failure Mode 3: One Context, Multiple Domains</div>
+  <div class="slide-body two-col">
+    <div>
+      <h2>Goals bleeding into each other</h2>
+      <ul class="bullets" style="margin-top:1rem">
+        <li>Exploration and implementation in the same thread</li>
+        <li>Brainstorming and deciding in the same thread</li>
+        <li class="accent">The model anchors on early brainstorm ideas when you're trying to make a final call</li>
+        <li>Suggestions come out half-explanation, half-implementation, uncommitted to either</li>
+      </ul>
+    </div>
+    <svg viewBox="0 0 360 280" width="100%" xmlns="http://www.w3.org/2000/svg">
+      <!-- Left circle: Explore -->
+      <circle cx="115" cy="135" r="115" fill="rgba(42,95,212,0.12)" stroke="#2a5fd4" stroke-width="2"/>
+      <text x="68" y="78" text-anchor="middle" fill="#2a5fd4" font-size="16" font-weight="700" font-family="Segoe UI,system-ui,sans-serif">Explore</text>
+      <text x="68" y="104" text-anchor="middle" fill="#3a50a0" font-size="11" font-family="Segoe UI,system-ui,sans-serif">what does this do?</text>
+      <text x="68" y="121" text-anchor="middle" fill="#3a50a0" font-size="11" font-family="Segoe UI,system-ui,sans-serif">what's the intent?</text>
+      <text x="68" y="138" text-anchor="middle" fill="#3a50a0" font-size="11" font-family="Segoe UI,system-ui,sans-serif">what are the risks?</text>
+      <!-- Right circle: Implement -->
+      <circle cx="245" cy="135" r="115" fill="rgba(201,95,46,0.12)" stroke="#c95f2e" stroke-width="2"/>
+      <text x="293" y="78" text-anchor="middle" fill="#c95f2e" font-size="16" font-weight="700" font-family="Segoe UI,system-ui,sans-serif">Implement</text>
+      <text x="293" y="104" text-anchor="middle" fill="#7a3a1a" font-size="11" font-family="Segoe UI,system-ui,sans-serif">change this</text>
+      <text x="293" y="121" text-anchor="middle" fill="#7a3a1a" font-size="11" font-family="Segoe UI,system-ui,sans-serif">add that</text>
+      <text x="293" y="138" text-anchor="middle" fill="#7a3a1a" font-size="11" font-family="Segoe UI,system-ui,sans-serif">rewrite it</text>
+      <!-- Overlap label -->
+      <text x="180" y="126" text-anchor="middle" fill="#806800" font-size="10.5" font-style="italic" font-family="Segoe UI,system-ui,sans-serif">half-explanation</text>
+      <text x="180" y="140" text-anchor="middle" fill="#806800" font-size="10.5" font-style="italic" font-family="Segoe UI,system-ui,sans-serif">half-suggestion</text>
+      <text x="180" y="154" text-anchor="middle" fill="#806800" font-size="10.5" font-style="italic" font-family="Segoe UI,system-ui,sans-serif">committed to neither</text>
+      <text x="180" y="265" text-anchor="middle" fill="#5a6890" font-size="11" font-family="Segoe UI,system-ui,sans-serif">the model can't calibrate its register</text>
+    </svg>
+  </div>
+  <aside class="notes">
+    The third failure mode is goals bleeding into each other. You start exploring an unfamiliar codebase — "what does this function do, what's the intent here, what would break if we changed it?" Great. Exploration mode. But then you see something that seems worth fixing right now, and you ask the LLM to rewrite it. And now you're in implementation mode. In the same conversation. With the same framing.
+
+    The result is responses that are half-explanation and half-suggestion, uncommitted to either register. The LLM doesn't know whether you want to understand the system or change it, so it tries to do both and does neither very well. The explanations come with caveats about implementation. The suggestions come with qualifications about "you might want to consider." It hedges because the framing is mixed.
+
+    There's a related version of this with brainstorming and deciding. You ask it to brainstorm approaches to a problem. Good — you get a list of five options with tradeoffs. But then in the same conversation you say "ok, which one should we use?" And the LLM anchors on the ideas it already generated. It's not evaluating fresh — it's picking from the brainstorm with the same framing it used to generate it. You get a choice that's influenced by the brainstorm's framing, not an independent evaluation.
+
+    Two different modes of engagement. They should be two different conversations.
+  </aside>
+</div>
+
+<!-- ═══════════════════════════════════════════════════════
+     FM3 FIX: MODE DECLARATION
+═══════════════════════════════════════════════════════ -->
+<div class="slide orange" id="s12">
+  <div class="section-label">III. Failure Mode 3: Fix</div>
+  <div class="slide-body">
+    <h2>Declare your mode before you ask anything</h2>
+    <div style="display:grid;grid-template-columns:1fr 1fr;gap:0.8rem;margin-top:0.8rem;margin-bottom:0.6rem">
+      <div style="background:#eef1fb;border-left:4px solid #5b8af0;border-radius:6px;padding:0.85rem 1rem">
+        <div style="font-size:0.72rem;text-transform:uppercase;letter-spacing:0.1em;color:#2a5fd4;font-weight:700;margin-bottom:0.35rem">Exploring</div>
+        <div style="font-size:0.92rem;color:#2a3050;font-style:italic">"I want to understand this before touching anything."</div>
+      </div>
+      <div style="background:#eef1fb;border-left:4px solid #f0855b;border-radius:6px;padding:0.85rem 1rem">
+        <div style="font-size:0.72rem;text-transform:uppercase;letter-spacing:0.1em;color:#c95f2e;font-weight:700;margin-bottom:0.35rem">Brainstorming</div>
+        <div style="font-size:0.92rem;color:#2a3050;font-style:italic">"Generate options: I'll evaluate them separately."</div>
+      </div>
+      <div style="background:#eef1fb;border-left:4px solid #5bbf8a;border-radius:6px;padding:0.85rem 1rem">
+        <div style="font-size:0.72rem;text-transform:uppercase;letter-spacing:0.1em;color:#2a8a5a;font-weight:700;margin-bottom:0.35rem">Deciding</div>
+        <div style="font-size:0.92rem;color:#2a3050;font-style:italic">"I need a recommendation with a rationale, not a list."</div>
+      </div>
+      <div style="background:#eef1fb;border-left:4px solid #a78bf0;border-radius:6px;padding:0.85rem 1rem">
+        <div style="font-size:0.72rem;text-transform:uppercase;letter-spacing:0.1em;color:#7050c8;font-weight:700;margin-bottom:0.35rem">Implementing</div>
+        <div style="font-size:0.92rem;color:#2a3050;font-style:italic">"The decision is made. Help me build it."</div>
+      </div>
+    </div>
+    <div class="tip-box" style="margin-top:0.85rem">
+      When you shift modes, <b>start a new conversation</b>. Carry forward only conclusions, not the path that produced them.
+    </div>
+  </div>
+  <aside class="notes">
+    The fix is to declare your mode before you ask your first question. Four modes worth naming explicitly.
+
+    Exploring: you want to understand before you touch anything. The LLM should describe, explain, surface tradeoffs. Not suggest changes. If you tell it "I'm in exploration mode, I don't want suggestions yet," it can calibrate to that.
+
+    Brainstorming: you want options without evaluation. Tell it that. You're generating a possibility space, not choosing. If you don't tell it, it'll pre-evaluate and narrow for you, which defeats the purpose.
+
+    Deciding: you want a recommendation with a rationale. Not a list of five options. Not "it depends." A position with reasoning. Ask for that explicitly.
+
+    Implementing: the decision is made. You're executing, not reconsidering. Tell it that so it doesn't keep offering alternatives.
+
+    The bigger principle here: when you shift from one mode to another, start a new conversation. And carry forward only the conclusions — not the path. If your exploration conversation established that the bottleneck is in the query layer, start a new conversation with "we've determined the bottleneck is in the query layer. Now help me implement an index on user_id." The exploration conversation is done. This is an implementation conversation. Keep them separate.
+  </aside>
+</div>
+
+<!-- ═══════════════════════════════════════════════════════
+     FAILURE MODE 4: CONTEXT SATURATION (SVG)
+═══════════════════════════════════════════════════════ -->
+<div class="slide orange" id="s13">
+  <div class="section-label">III. Failure Mode 4: Trying to Refactor a Bloated Context</div>
+  <div class="slide-body two-col text-heavy">
+    <div>
+      <h2>Can't change course</h2>
+      <ul class="bullets" style="margin-top:1rem">
+        <li>20 messages designing a REST API</li>
+        <li>"Actually, let's switch to GraphQL"</li>
+        <li class="accent">REST patterns keep creeping back, not because it forgot, but because the context is <em>saturated</em> with REST</li>
+        <li>You keep writing "no, not like that" and it keeps not quite sticking</li>
+      </ul>
+    </div>
+    <svg viewBox="0 0 300 215" width="100%" xmlns="http://www.w3.org/2000/svg">
+      <!-- Context window bar -->
+      <text x="150" y="18" text-anchor="middle" fill="#4a5880" font-size="11" font-family="Segoe UI,system-ui,sans-serif">context window</text>
+      <!-- Background -->
+      <rect x="10" y="28" width="280" height="64" rx="5" fill="#eef1fb" stroke="#9090b8" stroke-width="1"/>
+      <!-- REST fill: 80% = 224px -->
+      <rect x="10" y="28" width="224" height="64" rx="5" fill="rgba(42,95,212,0.45)"/>
+      <!-- Misc: 10% = 28px -->
+      <rect x="234" y="28" width="28" height="64" fill="rgba(140,150,180,0.70)"/>
+      <!-- GraphQL: remaining ~10% = 28px -->
+      <rect x="262" y="28" width="28" height="64" rx="0 5 5 0" fill="rgba(240,133,91,0.7)"/>
+      <!-- Bar labels -->
+      <text x="117" y="57" text-anchor="middle" fill="white" font-size="11" font-weight="600" font-family="Segoe UI,system-ui,sans-serif">20 messages of REST design</text>
+      <text x="117" y="72" text-anchor="middle" fill="rgba(255,255,255,0.65)" font-size="9.5" font-family="Segoe UI,system-ui,sans-serif">resources · HTTP verbs · status codes · pagination</text>
+      <text x="248" y="64" text-anchor="middle" fill="#3a50a0" font-size="8.5" font-family="Segoe UI,system-ui,sans-serif" transform="rotate(-90,248,64)">misc</text>
+      <!-- Arrow + label for GraphQL -->
+      <line x1="276" y1="112" x2="276" y2="95" stroke="#c95f2e" stroke-width="1.5"/>
+      <polygon points="271,95 281,95 276,90" fill="#c95f2e"/>
+      <text x="276" y="128" text-anchor="middle" fill="#c95f2e" font-size="10" font-family="Segoe UI,system-ui,sans-serif">"actually,</text>
+      <text x="276" y="141" text-anchor="middle" fill="#c95f2e" font-size="10" font-family="Segoe UI,system-ui,sans-serif">let's switch</text>
+      <text x="276" y="154" text-anchor="middle" fill="#c95f2e" font-size="10" font-family="Segoe UI,system-ui,sans-serif">to GraphQL"</text>
+      <!-- Caption -->
+      <text x="150" y="192" text-anchor="middle" fill="#5a6890" font-size="10.5" font-family="Segoe UI,system-ui,sans-serif">80% of context is already REST.</text>
+      <text x="150" y="207" text-anchor="middle" fill="#5a6890" font-size="10.5" font-family="Segoe UI,system-ui,sans-serif">The pivot has no room to expand.</text>
+    </svg>
+  </div>
+  <aside class="notes">
+    The fourth failure mode is the one that's most frustrating because it feels like you should be able to fix it with the right phrasing. You've been designing a REST API for 20 messages — resource modeling, HTTP verbs, status codes, pagination patterns. Good conversation. Then you realize you actually need to switch to GraphQL. So you say so.
+
+    And REST patterns keep creeping back. The LLM acknowledges the switch — sure, GraphQL — and then gives you a response shaped by REST thinking. You say "no, not like that, I mean the GraphQL way." It tries again. Closer but still influenced by the REST framing. You're writing "no, not like that" for the third time, and it's still not quite landing.
+
+    Here's what's happening: the context is saturated with REST. 80% of the conversation is REST content. Your GraphQL pivot is a small signal competing against a massive REST prior. You can't reason the model out of this through correction, because you're not dealing with a comprehension problem. You're dealing with an architectural problem. The context itself is wrong.
+
+    This is exactly what DDD describes when it talks about trying to translate between bounded contexts without an anti-corruption layer. The old model bleeds through because it's everywhere.
+  </aside>
+</div>
+
+<!-- ═══════════════════════════════════════════════════════
+     FM4 FIX: PIVOTS ARE BOUNDARY EVENTS
+═══════════════════════════════════════════════════════ -->
+<div class="slide orange" id="s14">
+  <div class="section-label">III. Failure Mode 4: Fix</div>
+  <div class="slide-body">
+    <h2>Pivots are boundary events, not corrections</h2>
+    <div style="margin:0.9rem 0 0.7rem;text-align:center">
+      <p style="font-size:1.55rem;font-weight:700;color:#0e1420;line-height:1.3">"Let's switch to GraphQL"<br><span style="font-size:1.05rem;font-weight:400;color:#3a4880">after 20 messages of REST design</span></p>
+      <div style="display:grid;grid-template-columns:1fr 1fr;gap:1.2rem;margin-top:0.9rem;text-align:left">
+        <div style="background:rgba(201,95,46,0.08);border:1px solid rgba(240,133,91,0.3);border-radius:6px;padding:0.75rem 1rem">
+          <div style="font-size:0.72rem;text-transform:uppercase;letter-spacing:0.1em;color:#c95f2e;font-weight:700;margin-bottom:0.35rem">is not</div>
+          <div style="font-size:0.9rem;color:#504030">asking it to change its mind</div>
+        </div>
+        <div style="background:rgba(91,191,138,0.08);border:1px solid rgba(91,191,138,0.3);border-radius:6px;padding:0.75rem 1rem">
+          <div style="font-size:0.72rem;text-transform:uppercase;letter-spacing:0.1em;color:#2a8a5a;font-weight:700;margin-bottom:0.35rem">is</div>
+          <div style="font-size:0.9rem;color:#1a5040">asking it to replace its context</div>
+        </div>
+      </div>
+      <p style="font-size:1.05rem;color:#303c58;margin-top:0.8rem;font-style:italic">You cannot reason a model out of a saturated context.</p>
+    </div>
+    <div class="tip-box" style="margin-top:0.85rem">
+      <b>What to do:</b> Start a new conversation. Lead with the destination. Don't mention the journey.<br><br>
+      <span style="font-style:italic;color:#1a5040">"We're building a GraphQL API. Schema-first design, the data layer is PostgreSQL, resolvers in Python."</span><br><br>
+      The REST conversation is over. This is a GraphQL conversation.
+    </div>
+    <div class="detect-box" style="margin-top:0.6rem">
+      <b>Signal:</b> You've written "no, not like that" more than twice in a row. Stop correcting. Start fresh.
+    </div>
+  </div>
+  <aside class="notes">
+    The fix is to recognize pivots as context-boundary events, not corrections. "Let's switch to GraphQL" after 20 messages of REST is not asking the LLM to change its mind about something. It's asking it to replace its context. Those are fundamentally different operations. Corrections can work within a context. Context replacement requires a new context.
+
+    So the answer is: start a new conversation. And crucially, lead with the destination, not the journey. Don't open the new conversation with "we were designing a REST API but now we're switching to GraphQL." That just smuggles the REST context into the new conversation. Open it with: "We're building a GraphQL API. Schema-first design. Data layer is PostgreSQL. Resolvers in Python." That's your new context. That's where you start.
+
+    The REST conversation isn't wasted — you may have learned things from it. But carry forward only what's still true. The useful output of the REST conversation might be "we need pagination, we need auth at the resource level, we need versioning." Those are requirements that travel. The REST-specific modeling decisions don't travel. Leave them behind.
+
+    Detection: you've written "no, not like that" more than twice in a row. At that point, stop correcting. You are not going to fix this through better phrasing. Start fresh.
+  </aside>
+</div>
+
+<!-- ═══════════════════════════════════════════════════════
+     PRACTICES OVERVIEW
+═══════════════════════════════════════════════════════ -->
+<div class="slide green" id="s15">
+  <div class="section-label">IV. Bounded Context Practices for LLM Consumers</div>
+  <div class="slide-body">
+    <h2>Four practices</h2>
+    <div style="display:grid;grid-template-columns:1fr;gap:0.65rem;margin-top:0.8rem">
+      <div style="background:#eef1fb;border-radius:6px;padding:0.7rem 1rem;display:flex;align-items:baseline;gap:0.6rem">
+        <span style="font-size:0.9rem;font-weight:700;color:#2a8a5a;min-width:1.4rem">01</span>
+        <div><div style="font-size:0.88rem;font-weight:600;color:#1a2060">The Conversation Charter</div><div style="font-size:0.78rem;color:#303c58;margin-top:0.15rem">define scope, vocabulary, and mode first</div></div>
+      </div>
+      <div style="background:#eef1fb;border-radius:6px;padding:0.7rem 1rem;display:flex;align-items:baseline;gap:0.6rem">
+        <span style="font-size:0.9rem;font-weight:700;color:#2a8a5a;min-width:1.4rem">02</span>
+        <div><div style="font-size:0.88rem;font-weight:600;color:#1a2060">One Conversation, One Domain</div><div style="font-size:0.78rem;color:#303c58;margin-top:0.15rem">split conversations like bounded contexts</div></div>
+      </div>
+      <div style="background:#eef1fb;border-radius:6px;padding:0.7rem 1rem;display:flex;align-items:baseline;gap:0.6rem">
+        <span style="font-size:0.9rem;font-weight:700;color:#2a8a5a;min-width:1.4rem">03</span>
+        <div><div style="font-size:0.88rem;font-weight:600;color:#1a2060">The Carry-Only-Conclusions Handoff</div><div style="font-size:0.78rem;color:#303c58;margin-top:0.15rem">only destinations cross the boundary</div></div>
+      </div>
+      <div style="background:#eef1fb;border-radius:6px;padding:0.7rem 1rem;display:flex;align-items:baseline;gap:0.6rem">
+        <span style="font-size:0.9rem;font-weight:700;color:#2a8a5a;min-width:1.4rem">04</span>
+        <div><div style="font-size:0.88rem;font-weight:600;color:#1a2060">The Anti-Corruption Layer Moment</div><div style="font-size:0.78rem;color:#303c58;margin-top:0.15rem">when "no, not that" stops working, new conversation</div></div>
+      </div>
+    </div>
+  </div>
+  <aside class="notes">
+    I've been naming fixes as I went through the failure modes, but I want to collect them here as a set of six practices you can use deliberately. I've already covered the Mode Declaration and the Re-Anchor. Let me walk through the other four with a bit more depth.
+
+    The reason I want to name these as practices rather than just tips is that I think framing matters here. These aren't workarounds for a bad tool. They're the same discipline that makes you a good collaborator in any bounded context — with a human team, with an external API, with a documentation system. The LLM is a collaborator with its own domain model, and you need to manage the boundary between your model and its model.
+
+    That framing, I think, is more durable than a list of tips. The tips will evolve as the tooling evolves. The boundary discipline is always relevant.
+  </aside>
+</div>
+
+<!-- ═══════════════════════════════════════════════════════
+     THE CONVERSATION CHARTER
+═══════════════════════════════════════════════════════ -->
+<div class="slide green" id="s16">
+  <div class="section-label">IV. Practices</div>
+  <div class="slide-body">
+    <h2>The Conversation Charter</h2>
+    <p style="font-size:1.1rem;color:#2a5040;margin-bottom:0.8rem">2–3 sentences at the start of any non-trivial conversation:</p>
+    <div class="example-block">
+      <span class="comment">// 1. Scope — what system / module / problem</span><br>
+      "We are working on the authentication module of a Python Flask app."<br><br>
+      <span class="comment">// 2. Vocabulary — ambiguous terms in this context</span><br>
+      "'token' means a JWT, not a payment token."<br><br>
+      <span class="comment">// 3. Mode — exploring, brainstorming, deciding, or implementing?</span><br>
+      "We are designing — not implementing yet."
+    </div>
+    <div class="tip-box" style="margin-top:0.75rem">
+      This is exactly what a bounded context definition looks like. You are doing DDD, not just prompting.
+    </div>
+  </div>
+  <aside class="notes">
+    The Conversation Charter is the most high-leverage practice in this list. It's three things, written at the start of any non-trivial conversation.
+
+    First: scope. What system, module, or problem are we working in? "We are working on the authentication module of a Python Flask app." This orients everything. It's the bounded context name.
+
+    Second: vocabulary. Which terms in this conversation could mean multiple things? "In this conversation, 'token' means a JWT — not a payment token." You don't need to define every term. Just the ones that could go wrong.
+
+    Third: mode. Are we exploring, brainstorming, deciding, or implementing? "We are designing, not implementing yet." This tells the LLM what register to respond in.
+
+    Three sentences. Maybe four. Thirty seconds. And then you ask your question.
+
+    I want to be explicit about what this practice actually is. It's not a prompting trick. It's a bounded context definition. You are saying: here is the boundary. Here is the vocabulary within it. Here is the purpose of this collaboration. You are doing domain-driven design with your conversation. The fact that it happens to make LLM interactions much more productive is a consequence, not the goal.
+  </aside>
+</div>
+
+<!-- ═══════════════════════════════════════════════════════
+     ONE CONVERSATION, ONE DOMAIN
+═══════════════════════════════════════════════════════ -->
+<div class="slide green" id="s17">
+  <div class="section-label">IV. Practices</div>
+  <div class="slide-body">
+    <h2>One conversation, one domain</h2>
+    <svg viewBox="0 0 680 180" width="100%" xmlns="http://www.w3.org/2000/svg" style="margin:0.8rem 0 0.4rem">
+      <rect x="10"  y="10" width="280" height="160" rx="8" fill="#eef1fb" stroke="#2a5fd4" stroke-width="1.5"/>
+      <rect x="10"  y="10" width="280" height="32"  rx="8 8 0 0" fill="#2a5fd4"/>
+      <rect x="10"  y="30" width="280" height="12"  fill="#2a5fd4"/>
+      <text x="150" y="31" text-anchor="middle" fill="white" font-size="12" font-weight="700" font-family="Segoe UI,system-ui,sans-serif">Conversation A · Research</text>
+      <text x="150" y="62" text-anchor="middle" fill="#3a50a0" font-size="11" font-family="Segoe UI,system-ui,sans-serif">what is the bottleneck?</text>
+      <text x="150" y="80" text-anchor="middle" fill="#3a50a0" font-size="11" font-family="Segoe UI,system-ui,sans-serif">what are the tradeoffs?</text>
+      <text x="150" y="98" text-anchor="middle" fill="#3a50a0" font-size="11" font-family="Segoe UI,system-ui,sans-serif">what options exist?</text>
+      <line x1="30" y1="110" x2="270" y2="110" stroke="#d0d8f0" stroke-width="1"/>
+      <text x="150" y="140" text-anchor="middle" fill="#2a5fd4" font-size="11" font-style="italic" font-family="Segoe UI,system-ui,sans-serif">→ conclusions only cross the line</text>
+      <line x1="340" y1="10" x2="340" y2="170" stroke="#9090b8" stroke-width="2" stroke-dasharray="6,4"/>
+      <text x="340" y="186" text-anchor="middle" fill="#9090b8" font-size="10" font-family="Segoe UI,system-ui,sans-serif">new conversation</text>
+      <rect x="390" y="10" width="280" height="160" rx="8" fill="#eef1fb" stroke="#c95f2e" stroke-width="1.5"/>
+      <rect x="390" y="10" width="280" height="32"  rx="8 8 0 0" fill="#c95f2e"/>
+      <rect x="390" y="30" width="280" height="12"  fill="#c95f2e"/>
+      <text x="530" y="31" text-anchor="middle" fill="white" font-size="12" font-weight="700" font-family="Segoe UI,system-ui,sans-serif">Conversation B · Implement</text>
+      <text x="530" y="62" text-anchor="middle" fill="#7a3a1a" font-size="11" font-family="Segoe UI,system-ui,sans-serif">bottleneck = query layer ✓</text>
+      <text x="530" y="80" text-anchor="middle" fill="#7a3a1a" font-size="11" font-family="Segoe UI,system-ui,sans-serif">add index on user_id</text>
+      <text x="530" y="98" text-anchor="middle" fill="#7a3a1a" font-size="11" font-family="Segoe UI,system-ui,sans-serif">do not touch the ORM</text>
+      <line x1="410" y1="110" x2="650" y2="110" stroke="#d0d8f0" stroke-width="1"/>
+      <text x="530" y="140" text-anchor="middle" fill="#c95f2e" font-size="11" font-style="italic" font-family="Segoe UI,system-ui,sans-serif">build from here</text>
+    </svg>
+    <div class="tip-box" style="margin-top:0.85rem">
+      Starting a new conversation is not losing context. It's maintaining integrity. You choose what crosses the boundary.
+    </div>
+    <div class="detect-box" style="margin-top:0.7rem">
+      The useful question at any pivot: <b>"Am I in a new domain now?"</b><br>
+      If yes — this is a new conversation.
+    </div>
+  </div>
+  <aside class="notes">
+    The second practice follows directly from the charter. Split conversations the way you'd split bounded contexts. Research and implementation are different domains — separate conversations. Exploration and rewriting are different domains — separate conversations. Brainstorming and deciding are different domains — separate conversations.
+
+    I know this feels like it will slow you down. It won't. What will slow you down is spending 20 minutes arguing with a saturated context. A fresh conversation with a clean charter is faster than five corrections in a confused one.
+
+    The key reframe here: starting a new conversation is not losing context. It's maintaining integrity. You are choosing what crosses the boundary deliberately, just like the DDD anti-corruption layer — rather than letting everything bleed across implicitly.
+
+    The useful question to ask yourself at any point where you feel yourself pivoting: "Am I in a new domain now?" If the answer is yes — if you've shifted from understanding to building, from generating options to picking one, from the old architecture to the new one — that's a new conversation. Stop and start fresh. It takes ten seconds to open a new window. The charter takes 30 more. You're at net positive within two messages.
+  </aside>
+</div>
+
+<!-- ═══════════════════════════════════════════════════════
+     CARRY-ONLY-CONCLUSIONS HANDOFF
+═══════════════════════════════════════════════════════ -->
+<div class="slide green" id="s18">
+  <div class="section-label">IV. Practices</div>
+  <div class="slide-body">
+    <h2>The Carry-Only-Conclusions Handoff</h2>
+    <p style="font-size:1.1rem;color:#2a5040;margin-bottom:0.8rem">When you start a new conversation after closing one:</p>
+    <div class="example-block">
+      "Previous conversation established:<br>
+      &nbsp;&nbsp;— the bottleneck is in the query layer<br>
+      &nbsp;&nbsp;— we're adding an index on user_id<br>
+      &nbsp;&nbsp;— we're not changing the ORM<br>
+      Build from here."
+    </div>
+    <svg viewBox="0 0 680 100" width="100%" xmlns="http://www.w3.org/2000/svg" style="margin-top:0.75rem">
+      <rect x="8"   y="8"  width="240" height="84" rx="6" fill="#eef1fb" stroke="#9090b8" stroke-width="1.5"/>
+      <text x="128" y="27" text-anchor="middle" fill="#5a6890" font-size="10" font-weight="600" font-family="Segoe UI,system-ui,sans-serif">PREVIOUS CONVERSATION</text>
+      <text x="128" y="46" text-anchor="middle" fill="#2a3458" font-size="9.5" font-family="Segoe UI,system-ui,sans-serif">reasoning · alternatives considered</text>
+      <text x="128" y="60" text-anchor="middle" fill="#2a3458" font-size="9.5" font-family="Segoe UI,system-ui,sans-serif">wrong turns · exploration paths</text>
+      <text x="128" y="74" text-anchor="middle" fill="#2a3458" font-size="9.5" font-family="Segoe UI,system-ui,sans-serif">tentative ideas · things you ruled out</text>
+      <line x1="248" y1="50" x2="282" y2="50" stroke="#b0bcd8" stroke-width="1.5"/>
+      <polygon points="278,44 290,50 278,56" fill="#b0bcd8"/>
+      <text x="269" y="40" text-anchor="middle" fill="#b0bcd8" font-size="9" font-family="Segoe UI,system-ui,sans-serif">filter</text>
+      <rect x="292" y="20" width="240" height="60" rx="6" fill="#e8f4f0" stroke="#2a8a5a" stroke-width="1.5"/>
+      <text x="412" y="40" text-anchor="middle" fill="#2a8a5a" font-size="10" font-weight="600" font-family="Segoe UI,system-ui,sans-serif">NEW CONVERSATION</text>
+      <text x="412" y="58" text-anchor="middle" fill="#1a6040" font-size="9.5" font-family="Segoe UI,system-ui,sans-serif">conclusions only · decisions made · constraints</text>
+      <text x="128" y="100" text-anchor="middle" fill="#b0bcd8" font-size="9" font-family="Segoe UI,system-ui,sans-serif">the journey stays behind</text>
+      <text x="412" y="96" text-anchor="middle" fill="#1a5040" font-size="9" font-family="Segoe UI,system-ui,sans-serif">only the destination travels</text>
+    </svg>
+  </div>
+  <aside class="notes">
+    When you close one conversation and open another, the question is: what do you carry forward? The Carry-Only-Conclusions Handoff answers that.
+
+    Write 2-4 bullet points: the decisions that were made, the constraints that still apply, the direction that's been set. "Previous conversation established: the bottleneck is in the query layer, we're adding an index on user_id, we're not touching the ORM. Build from here." That's the handoff.
+
+    What you deliberately exclude: the reasoning, the alternatives you considered, the wrong turns, the exploration. Those belong to the old conversation. They don't cross the boundary.
+
+    This is exactly what DDD calls context-mapping — the explicit, deliberate translation of concepts from one bounded context to another. In DDD, the context map is a formal artifact that the teams maintain. Here, it's a three-line block at the top of a new conversation. The principle is identical.
+
+    And this has a nice side effect: it forces you to be clear about what was actually decided. If you can't write the conclusions in 3-4 bullets, you may not have actually finished the last conversation. That's valuable information — sometimes the blocker isn't the implementation, it's that you haven't actually made the decision yet.
+  </aside>
+</div>
+
+<!-- ═══════════════════════════════════════════════════════
+     ANTI-CORRUPTION LAYER MOMENT
+═══════════════════════════════════════════════════════ -->
+<div class="slide green" id="s19">
+  <div class="section-label">IV. Practices</div>
+  <div class="slide-body">
+    <h2>The Anti-Corruption Layer Moment</h2>
+    <div style="display:grid;grid-template-columns:1fr 1fr 1fr;gap:0.75rem;margin-top:0.85rem;margin-bottom:0.6rem">
+      <div style="background:#eef1fb;border-radius:8px;padding:0.9rem 1rem;text-align:center">
+        <div style="font-size:0.72rem;text-transform:uppercase;letter-spacing:0.1em;color:#3a4880;margin-bottom:0.5rem">1st correction</div>
+        <div style="font-size:1.6rem;color:#c95f2e">✗</div>
+        <div style="font-size:0.8rem;color:#303c58;margin-top:0.4rem;font-style:italic">"no, I meant Y, not X"</div>
+      </div>
+      <div style="background:#eef1fb;border-radius:8px;padding:0.9rem 1rem;text-align:center">
+        <div style="font-size:0.72rem;text-transform:uppercase;letter-spacing:0.1em;color:#3a4880;margin-bottom:0.5rem">2nd correction</div>
+        <div style="font-size:1.6rem;color:#c95f2e">✗</div>
+        <div style="font-size:0.8rem;color:#303c58;margin-top:0.4rem;font-style:italic">"still not quite right"</div>
+      </div>
+      <div style="background:rgba(201,95,46,0.10);border:1px solid rgba(240,133,91,0.4);border-radius:8px;padding:0.9rem 1rem;text-align:center">
+        <div style="font-size:0.72rem;text-transform:uppercase;letter-spacing:0.1em;color:#c95f2e;margin-bottom:0.5rem;font-weight:700">3rd attempt</div>
+        <div style="font-size:1.6rem">⛔</div>
+        <div style="font-size:0.82rem;color:#803020;margin-top:0.4rem;font-weight:600">stop. new conversation.</div>
+      </div>
+    </div>
+    <p style="font-size:0.9rem;color:#303c58;margin-bottom:0.5rem">This is not a clarification problem. It's a boundary problem. In DDD, some vocabulary cannot be translated — it can only be replaced.</p>
+    <div class="tip-box" style="margin-top:0.85rem">
+      <b>Third time rule:</b> If you've corrected the same thing three times and it hasn't stuck, stop correcting. The anti-corruption layer isn't working because you haven't drawn a new boundary yet. Start a new conversation.
+    </div>
+    <div class="detect-box" style="margin-top:0.65rem">
+      Trying to fix a boundary problem through better clarification is like trying to fix a schema conflict by writing clearer error messages.
+    </div>
+  </div>
+  <aside class="notes">
+    I've already named this one in the failure modes, but it deserves its own practice slot because it's the one people most often try to solve by trying harder.
+
+    Here's the situation: you've corrected the same misunderstanding three times. Different phrasing each time. Still not landing. The natural impulse is to try one more correction, more carefully worded. Don't.
+
+    In domain-driven design, the anti-corruption layer is the mechanism that prevents one bounded context's model from leaking into another. It's a translation layer at the boundary. And the reason it exists is that some vocabulary genuinely cannot be translated — it can only be replaced. There's no good way to map the Sales "Customer" onto the Shipping "Customer" because they're fundamentally different objects. The anti-corruption layer prevents you from even trying.
+
+    When you're writing the same correction for the third time, you're experiencing this. The correction isn't sticking because you're asking the model to translate between two incompatible framings within the same saturated context. There's no translation path. The only fix is a new boundary.
+
+    The third time rule: if you've corrected the same thing three times and it hasn't landed, stop. Start a new conversation. Lead with where you want to be, not with where you came from.
+  </aside>
+</div>
+
+<!-- ═══════════════════════════════════════════════════════
+     WHERE LLMS EXCEL
+═══════════════════════════════════════════════════════ -->
+<div class="slide purple" id="s20">
+  <div class="section-label">V. The Useful Flip Side</div>
+  <div class="slide-body">
+    <h2>Where this framing tells us LLMs will shine</h2>
+    <p style="font-size:1.1rem;color:#3a3a80;margin-bottom:0.85rem">Tasks with naturally tight, well-defined domains:</p>
+    <div style="display:grid;grid-template-columns:1fr 1fr;gap:0.75rem;margin-top:0.85rem;margin-bottom:0.6rem">
+      <div style="background:#eef1fb;border-radius:6px;padding:0.85rem 1rem">
+        <div style="font-size:0.8rem;color:#7050c8;font-family:'Fira Code','Cascadia Code','Courier New',monospace;margin-bottom:0.35rem">"Convert this Python fn to TypeScript"</div>
+        <div style="font-size:0.78rem;color:#303c58">bounded input · bounded output · no vocabulary to negotiate</div>
+      </div>
+      <div style="background:#eef1fb;border-radius:6px;padding:0.85rem 1rem">
+        <div style="font-size:0.8rem;color:#7050c8;font-family:'Fira Code','Cascadia Code','Courier New',monospace;margin-bottom:0.35rem">"Write a regex that matches this format"</div>
+        <div style="font-size:0.78rem;color:#303c58">clear success condition · verifiable output</div>
+      </div>
+      <div style="background:#eef1fb;border-radius:6px;padding:0.85rem 1rem">
+        <div style="font-size:0.8rem;color:#7050c8;font-family:'Fira Code','Cascadia Code','Courier New',monospace;margin-bottom:0.35rem">"Generate a docstring for this function"</div>
+        <div style="font-size:0.78rem;color:#303c58">the function is the domain · self-contained</div>
+      </div>
+      <div style="background:#eef1fb;border-radius:6px;padding:0.85rem 1rem">
+        <div style="font-size:0.8rem;color:#7050c8;font-family:'Fira Code','Cascadia Code','Courier New',monospace;margin-bottom:0.35rem">"Reformat this SQL to match the style guide"</div>
+        <div style="font-size:0.78rem;color:#303c58">style guide = ubiquitous language · no ambiguity</div>
+      </div>
+    </div>
+    <div class="tip-box" style="margin-top:0.75rem">
+      These are good LLM tasks even for one-off uses where you'd never bother building a specialized tool. The domain is already bounded.
+    </div>
+  </div>
+  <aside class="notes">
+    Here's the useful flip side of this whole framework. If bounded context discipline is what makes LLM work coherent, then this framing tells us exactly where LLMs are most useful: tasks that are naturally bounded. Tasks where the domain is tight and well-defined, the vocabulary is unambiguous, and the success condition is clear.
+
+    Convert this Python function to TypeScript. The domain is the function. The vocabulary is Python and TypeScript. The success condition is: a TypeScript function that does the same thing. There's nothing to negotiate. You don't need a charter for this. Just ask.
+
+    Write a regex that matches this format. The domain is the format. The success condition is verifiable — does the regex match the examples? No ambiguity in "customer" here.
+
+    These are not just good LLM tasks. They're tasks where you get almost all of the benefit with almost none of the context discipline overhead. The domain is already bounded before you open the conversation.
+
+    And I want to be explicit: this is why one-shot LLM uses feel so satisfying compared to long, evolving conversations. It's not that the model is better at short tasks. It's that short tasks are more likely to be naturally bounded. The frustration comes from trying to do long, multi-domain work with the same interface.
+  </aside>
+</div>
+
+<!-- ═══════════════════════════════════════════════════════
+     THE 2x2 (SVG)
+═══════════════════════════════════════════════════════ -->
+<div class="slide purple" id="s21">
+  <div class="section-label">V. The Useful Flip Side</div>
+  <div class="slide-body two-col">
+    <div>
+      <h2>Where they'll always struggle</h2>
+      <ul class="bullets" style="margin-top:0.85rem">
+        <li>Tasks where the <em>domain is still being discovered</em></li>
+        <li>"Help me design a system that does X, Y, and Z": domain is negotiated as you go</li>
+        <li class="accent">These aren't unsolvable; they require <em>more</em> context discipline, not less</li>
+        <li>The friction is architectural, not conversational. Better phrasing won't fix it.</li>
+      </ul>
+    </div>
+    <svg viewBox="0 0 310 310" width="100%" xmlns="http://www.w3.org/2000/svg">
+      <!-- Axes -->
+      <line x1="155" y1="18" x2="155" y2="270" stroke="#9090b8" stroke-width="1.5"/>
+      <line x1="18" y1="144" x2="292" y2="144" stroke="#9090b8" stroke-width="1.5"/>
+      <!-- X axis label -->
+      <text x="155" y="296" text-anchor="middle" fill="#4a5880" font-size="11" font-family="Segoe UI,system-ui,sans-serif">Domain Clarity</text>
+      <text x="25" y="308" text-anchor="start" fill="#4a5880" font-size="9" font-family="Segoe UI,system-ui,sans-serif">fuzzy</text>
+      <text x="270" y="308" text-anchor="end" fill="#4a5880" font-size="9" font-family="Segoe UI,system-ui,sans-serif">tight</text>
+      <!-- Y axis label -->
+      <text x="10" y="144" text-anchor="middle" fill="#4a5880" font-size="11" font-family="Segoe UI,system-ui,sans-serif" transform="rotate(-90,10,144)">Success Condition</text>
+      <text x="9" y="25" text-anchor="start" fill="#4a5880" font-size="9" font-family="Segoe UI,system-ui,sans-serif" transform="rotate(-90,9,25)">clear</text>
+      <text x="9" y="264" text-anchor="start" fill="#4a5880" font-size="9" font-family="Segoe UI,system-ui,sans-serif" transform="rotate(-90,9,264)">fuzzy</text>
+      <!-- Top-right: sweet spot -->
+      <rect x="160" y="22" width="128" height="117" rx="4" fill="rgba(42,138,90,0.12)" stroke="#2a8a5a" stroke-opacity="0.5" stroke-width="1"/>
+      <text x="224" y="46" text-anchor="middle" fill="#2a8a5a" font-size="11" font-weight="700" font-family="Segoe UI,system-ui,sans-serif">sweet spot</text>
+      <text x="224" y="64" text-anchor="middle" fill="#3a50a0" font-size="9.5" font-family="Segoe UI,system-ui,sans-serif">regex / format matching</text>
+      <text x="224" y="79" text-anchor="middle" fill="#3a50a0" font-size="9.5" font-family="Segoe UI,system-ui,sans-serif">type conversion</text>
+      <text x="224" y="94" text-anchor="middle" fill="#3a50a0" font-size="9.5" font-family="Segoe UI,system-ui,sans-serif">boilerplate generation</text>
+      <text x="224" y="109" text-anchor="middle" fill="#3a50a0" font-size="9.5" font-family="Segoe UI,system-ui,sans-serif">docstring / test scaffolding</text>
+      <!-- Top-left: risky -->
+      <rect x="22" y="22" width="128" height="117" rx="4" fill="rgba(201,95,46,0.08)" stroke="#c95f2e" stroke-opacity="0.4" stroke-width="1"/>
+      <text x="86" y="46" text-anchor="middle" fill="#c95f2e" font-size="11" font-weight="700" font-family="Segoe UI,system-ui,sans-serif">risky</text>
+      <text x="86" y="64" text-anchor="middle" fill="#3a50a0" font-size="9.5" font-family="Segoe UI,system-ui,sans-serif">under-specified features</text>
+      <text x="86" y="79" text-anchor="middle" fill="#3a50a0" font-size="9.5" font-family="Segoe UI,system-ui,sans-serif">vague tasks, clear output</text>
+      <text x="86" y="94" text-anchor="middle" fill="#3a50a0" font-size="9.5" font-family="Segoe UI,system-ui,sans-serif">expectations → hallucination</text>
+      <!-- Bottom-right: good with structure -->
+      <rect x="160" y="149" width="128" height="117" rx="4" fill="rgba(42,95,212,0.08)" stroke="#2a5fd4" stroke-opacity="0.4" stroke-width="1"/>
+      <text x="224" y="172" text-anchor="middle" fill="#2a5fd4" font-size="11" font-weight="700" font-family="Segoe UI,system-ui,sans-serif">good with structure</text>
+      <text x="224" y="190" text-anchor="middle" fill="#3a50a0" font-size="9.5" font-family="Segoe UI,system-ui,sans-serif">refactoring to pattern</text>
+      <text x="224" y="205" text-anchor="middle" fill="#3a50a0" font-size="9.5" font-family="Segoe UI,system-ui,sans-serif">style conformance</text>
+      <text x="224" y="220" text-anchor="middle" fill="#3a50a0" font-size="9.5" font-family="Segoe UI,system-ui,sans-serif">code review</text>
+      <!-- Bottom-left: discipline required -->
+      <rect x="22" y="149" width="128" height="117" rx="4" fill="rgba(112,80,200,0.08)" stroke="#7050c8" stroke-opacity="0.4" stroke-width="1"/>
+      <text x="86" y="172" text-anchor="middle" fill="#7050c8" font-size="11" font-weight="700" font-family="Segoe UI,system-ui,sans-serif">discipline required</text>
+      <text x="86" y="190" text-anchor="middle" fill="#3a50a0" font-size="9.5" font-family="Segoe UI,system-ui,sans-serif">architecture design</text>
+      <text x="86" y="205" text-anchor="middle" fill="#3a50a0" font-size="9.5" font-family="Segoe UI,system-ui,sans-serif">system exploration</text>
+      <text x="86" y="220" text-anchor="middle" fill="#3a50a0" font-size="9.5" font-family="Segoe UI,system-ui,sans-serif">multi-domain tasks</text>
+    </svg>
+  </div>
+  <aside class="notes">
+    Here's the 2x2 that I think captures the relationship cleanly. Two axes: domain clarity on the horizontal — how tight and well-defined is the problem domain — and success condition clarity on the vertical — how clearly can you evaluate the output?
+
+    Top right: tight domain, clear success condition. This is the LLM sweet spot. Regex, type conversion, docstring generation, test scaffolding. Go here without hesitation.
+
+    Top left: fuzzy domain, clear success condition. This is risky. You have a clear idea of what the output should look like, but the domain hasn't been established. The model will generate something that looks right and isn't. It fills the domain vacuum with confidence. This is where hallucination lives.
+
+    Bottom right: tight domain, fuzzy success condition. Good with structure. Refactoring to a pattern, style conformance, code review. You need iteration but the domain is well-bounded — the context discipline work is lighter.
+
+    Bottom left: fuzzy domain, fuzzy success condition. Architecture design, system exploration, multi-domain work. These tasks require the most context discipline, and they're also the tasks where LLMs are most often used carelessly. Not impossible — just expensive in context management overhead. The domain is being discovered as you go.
+
+    The corollary for tool selection: if a task is in the top right, LLMs are great — even for one-shot uses. If it's in the bottom left, the LLM isn't the bottleneck. Your ability to define the context is.
+  </aside>
+</div>
+
+<!-- ═══════════════════════════════════════════════════════
+     CLOSE
+═══════════════════════════════════════════════════════ -->
+<div class="slide blue" id="s22">
+  <div class="section-label">VI. Close</div>
+  <div class="slide-body">
+    <div class="blink-cursor" style="font-size:2.2rem;color:#2a5fd4;font-family:monospace;margin-bottom:0.8rem">▊</div>
+    <h2>The cursor isn't a context. It just looks like one.</h2>
+    <div style="margin-top:1.2rem;margin-bottom:0.9rem">
+      <p style="font-size:1.1rem;color:#2a3050;line-height:1.8">The blinking cursor is a UI affordance. It was put there to invite you to type.</p>
+      <p style="font-size:1.1rem;color:#2a3050;line-height:1.8;margin-top:0.4rem">It says nothing about coherence, scope, or what the model actually knows.</p>
+      <p style="font-size:1.15rem;color:#2a3050;margin-top:0.9rem;line-height:1.7"><b style="color:#0e1420">Bounded thinking</b> makes you a more effective LLM consumer — and gives you realistic expectations about where these tools help.</p>
+    </div>
+    <div class="tip-box" style="margin-top:0.85rem">
+      The practices aren't tricks. They're the same discipline that makes any collaborative work coherent. The LLM is a collaborator with its own domain model, and you have to manage the boundary deliberately.
+    </div>
+  </div>
+  <aside class="notes">
+    I want to close where I started — with the blinking cursor.
+
+    The cursor is a UI affordance. It was put there by designers who wanted you to feel invited to type. And it works. It's inviting. But it doesn't say anything about the coherence of what's in the context. It doesn't tell you whether the vocabulary is established. It doesn't warn you when you've crossed a domain boundary. It doesn't surface when your constraints are losing signal. It just blinks.
+
+    The interface looks like an unlimited, coherent context. It isn't. It's a window with weight and saturation and vocabulary drift and mode confusion, just like any other collaborative medium. The DDD practitioners figured this out about large codebases and large teams decades ago. The same discipline applies here.
+
+    The practices I've given you today aren't tricks to manipulate a tool. They're the same practices that make any complex collaborative work coherent: scope your context, establish your vocabulary, declare your mode, manage your boundaries explicitly. The fact that your collaborator is a language model doesn't change the principle.
+
+    And the flip side is equally important. This framing tells you where to lean in with confidence. Tight domain, clear success condition — go. Don't over-engineer the prompt. Don't add elaborate context. Just ask. The tool is genuinely good there.
+
+    The cursor isn't a context. But you can be.
+
+    Thank you.
+  </aside>
+</div>
+
+<div class="slide blue" id="s22b">
+  <div class="slide-body" style="align-items:center;justify-content:center">
+    <img src="agentic-coding-live.png" alt="Agentic coding, live" style="max-width:100%;max-height:100%;object-fit:contain;border-radius:8px;box-shadow:0 4px 24px rgba(0,0,0,0.12)">
+  </div>
+  <aside class="notes"></aside>
+</div>
+
+<div class="slide" id="s23">
+  <div style="margin:auto;text-align:center">
+    <p style="font-size:2rem;color:#2a3050;font-family:monospace;letter-spacing:0.03em;margin:0">chelsea@chelseatroy.com</p>
+    <img src="speaker-page-qr.png" alt="QR code" style="display:block;margin:1.5rem auto 0;width:250px;height:250px">
+  </div>
+  <aside class="notes"></aside>
+</div>
+
+<div id="slide-time"></div>
+
+<div id="notes-panel">
+  <div id="notes-controls">
+    <button onclick="adjustNotesFontSize(-2)">A−</button>
+    <button onclick="adjustNotesFontSize(2)">A+</button>
+  </div>
+  <div id="notes-content"></div>
+</div>
+
+<!-- ─── NAVIGATION ─────────────────────────────────────── -->
+<div id="nav">
+  <button onclick="goTo(current-1)">← prev</button>
+  <span id="counter">1 / 25</span>
+  <button onclick="goTo(current+1)">next →</button>
+  <button id="notes-btn" onclick="toggleNotes()" title="Toggle speaking notes (N)">notes [N]</button>
+</div>
+
+<script>
+const slides = Array.from(document.querySelectorAll('.slide'));
+let current = 0;
+
+const cumTimes = (function() {
+  let total = 0;
+  return slides.map(slide => {
+    const notes = slide.querySelector('aside.notes');
+    const words = notes ? notes.innerText.trim().split(/\s+/).filter(w => w).length : 0;
+    const extraSeconds = parseFloat(slide.dataset.extraSeconds) || 0;
+    total += (words / 120) * 60 + extraSeconds;
+    return Math.round(total);
+  });
+})();
+
+function formatTime(secs) {
+  return Math.floor(secs / 60) + ':' + String(secs % 60).padStart(2, '0');
+}
+
+let notesFontSize = 14;
+
+function updateNotesPanel() {
+  const notes = slides[current].querySelector('aside.notes');
+  const el = document.getElementById('notes-content');
+  el.textContent = notes ? notes.innerText.trim() : '';
+  el.style.fontSize = notesFontSize + 'pt';
+  document.getElementById('notes-panel').scrollTop = 0;
+}
+
+function adjustNotesFontSize(delta) {
+  notesFontSize = Math.max(10, Math.min(32, notesFontSize + delta));
+  document.getElementById('notes-content').style.fontSize = notesFontSize + 'pt';
+}
+
+function goTo(n) {
+  slides[current].classList.remove('active');
+  current = Math.max(0, Math.min(n, slides.length - 1));
+  slides[current].classList.add('active');
+  document.getElementById('counter').textContent = (current + 1) + ' / ' + slides.length;
+  document.getElementById('slide-time').textContent = formatTime(cumTimes[current]);
+  localStorage.setItem('slide', current);
+  if (document.body.classList.contains('notes-visible')) updateNotesPanel();
+}
+
+const saved = parseInt(localStorage.getItem('slide'), 10);
+if (!isNaN(saved)) goTo(saved);
+
+function toggleNotes() {
+  document.body.classList.toggle('notes-visible');
+  const btn = document.getElementById('notes-btn');
+  const visible = document.body.classList.contains('notes-visible');
+  btn.textContent = visible ? 'hide notes [N]' : 'notes [N]';
+  if (visible) updateNotesPanel();
+}
+
+document.addEventListener('keydown', function(e) {
+  if (e.target.tagName === 'INPUT' || e.target.tagName === 'TEXTAREA') return;
+  if (e.key === 'ArrowRight' || e.key === ' ') { e.preventDefault(); goTo(current + 1); }
+  if (e.key === 'ArrowLeft') { e.preventDefault(); goTo(current - 1); }
+  if (e.key === 'n' || e.key === 'N') toggleNotes();
+  if (e.key === 'Home') goTo(0);
+  if (e.key === 'End') goTo(slides.length - 1);
+});
+</script>
+</body>
+</html>
