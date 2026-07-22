@@ -236,6 +236,8 @@ body.notes-visible #notes-panel { display: block; }
 }
 #nav button:hover { border-color: #2a5fd4; color: #2a5fd4; }
 #counter { color: #7080a8; font-size: 0.85rem; min-width: 4.5rem; text-align: center; }
+body.chrome-hidden #nav,
+body.chrome-hidden #slide-time { display: none; }
 
 /* ─── SLIDE TIMER ───────────────────────────────────────── */
 #slide-time {
@@ -1411,11 +1413,16 @@ function toggleNotes() {
   if (visible) updateNotesPanel();
 }
 
+function toggleChrome() {
+  document.body.classList.toggle('chrome-hidden');
+}
+
 document.addEventListener('keydown', function(e) {
   if (e.target.tagName === 'INPUT' || e.target.tagName === 'TEXTAREA') return;
   if (e.key === 'ArrowRight' || e.key === ' ') { e.preventDefault(); goTo(current + 1); }
   if (e.key === 'ArrowLeft') { e.preventDefault(); goTo(current - 1); }
   if (e.key === 'n' || e.key === 'N') toggleNotes();
+  if (e.key === 'p' || e.key === 'P') toggleChrome();
   if (e.key === 'Home') goTo(0);
   if (e.key === 'End') goTo(slides.length - 1);
 });

@@ -30,3 +30,50 @@ test.describe('existing deck behavior (baseline, pre-presenter-mode)', () => {
     await expect(page.locator('body')).not.toHaveClass(/notes-visible/);
   });
 });
+
+test.describe('audience/presenter mode toggle (P key)', () => {
+  test('P hides all chrome: nav buttons, counter, notes button, and slide timer', async ({ page }) => {
+    await page.goto(deckPath);
+    await expect(page.locator('#nav')).toBeVisible();
+    await expect(page.locator('#slide-time')).toBeVisible();
+
+    await page.keyboard.press('p');
+
+    await expect(page.locator('#nav')).toBeHidden();
+    await expect(page.locator('#slide-time')).toBeHidden();
+    await expect(page.locator('#nav button', { hasText: 'prev' })).toBeHidden();
+    await expect(page.locator('#nav button', { hasText: 'next' })).toBeHidden();
+    await expect(page.locator('#notes-btn')).toBeHidden();
+    await expect(page.locator('#counter')).toBeHidden();
+
+    await page.keyboard.press('p');
+    await expect(page.locator('#nav')).toBeVisible();
+    await expect(page.locator('#slide-time')).toBeVisible();
+  });
+
+  test('navigation keys still work while chrome is hidden', async ({ page }) => {
+    await page.goto(deckPath);
+    const slideCount = await page.locator('.slide').count();
+    const counter = page.locator('#counter');
+
+    await page.keyboard.press('p');
+    await expect(page.locator('#nav')).toBeHidden();
+
+    await page.keyboard.press('ArrowRight');
+    await page.keyboard.press('p');
+
+    await expect(counter).toHaveText('2 / ' + slideCount);
+  });
+
+  test('N still toggles the notes panel while chrome is hidden', async ({ page }) => {
+    await page.goto(deckPath);
+    await page.keyboard.press('p');
+    await expect(page.locator('body')).not.toHaveClass(/notes-visible/);
+
+    await page.keyboard.press('n');
+    await expect(page.locator('body')).toHaveClass(/notes-visible/);
+
+    await page.keyboard.press('n');
+    await expect(page.locator('body')).not.toHaveClass(/notes-visible/);
+  });
+});
