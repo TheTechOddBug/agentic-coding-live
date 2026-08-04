@@ -236,8 +236,7 @@ body.notes-visible #notes-panel { display: block; }
 }
 #nav button:hover { border-color: #2a5fd4; color: #2a5fd4; }
 #counter { color: #7080a8; font-size: 0.85rem; min-width: 4.5rem; text-align: center; }
-body.chrome-hidden #nav,
-body.chrome-hidden #slide-time { display: none; }
+body.chrome-hidden #nav { display: none; }
 
 /* ─── SLIDE TIMER ───────────────────────────────────────── */
 #slide-time {
@@ -250,7 +249,9 @@ body.chrome-hidden #slide-time { display: none; }
   letter-spacing: 0.05em;
   z-index: 100;
   pointer-events: none;
+  transition: bottom 0.15s;
 }
+body.chrome-hidden #slide-time { bottom: 1rem; }
 
 /* ─── BLINKING CURSOR ───────────────────────────────────── */
 @keyframes blink { 0%, 100% { opacity: 1; } 50% { opacity: 0; } }

@@ -32,7 +32,7 @@ test.describe('existing deck behavior (baseline, pre-presenter-mode)', () => {
 });
 
 test.describe('audience/presenter mode toggle (P key)', () => {
-  test('P hides all chrome: nav buttons, counter, notes button, and slide timer', async ({ page }) => {
+  test('P hides nav buttons, counter, and notes button, but keeps the slide timer visible', async ({ page }) => {
     await page.goto(deckPath);
     await expect(page.locator('#nav')).toBeVisible();
     await expect(page.locator('#slide-time')).toBeVisible();
@@ -40,15 +40,43 @@ test.describe('audience/presenter mode toggle (P key)', () => {
     await page.keyboard.press('p');
 
     await expect(page.locator('#nav')).toBeHidden();
-    await expect(page.locator('#slide-time')).toBeHidden();
     await expect(page.locator('#nav button', { hasText: 'prev' })).toBeHidden();
     await expect(page.locator('#nav button', { hasText: 'next' })).toBeHidden();
     await expect(page.locator('#notes-btn')).toBeHidden();
     await expect(page.locator('#counter')).toBeHidden();
+    await expect(page.locator('#slide-time')).toBeVisible();
 
     await page.keyboard.press('p');
     await expect(page.locator('#nav')).toBeVisible();
     await expect(page.locator('#slide-time')).toBeVisible();
+  });
+
+  test('slide timer stays visible and keeps updating while in presenter mode', async ({ page }) => {
+    await page.goto(deckPath);
+    const slideTime = page.locator('#slide-time');
+
+    await page.keyboard.press('p');
+    await expect(slideTime).toBeVisible();
+    const textAtSlideOne = await slideTime.textContent();
+
+    await page.keyboard.press('ArrowRight');
+    await expect(slideTime).toBeVisible();
+    const textAtSlideTwo = await slideTime.textContent();
+
+    expect(textAtSlideTwo).not.toBe(textAtSlideOne);
+  });
+
+  test('slide timer drops down to the corner once the nav bar is gone', async ({ page }) => {
+    await page.goto(deckPath);
+    const slideTime = page.locator('#slide-time');
+
+    const boxBefore = await slideTime.boundingBox();
+
+    await page.keyboard.press('p');
+    await expect(page.locator('#nav')).toBeHidden();
+    const boxAfter = await slideTime.boundingBox();
+
+    expect(boxAfter.y).toBeGreaterThan(boxBefore.y);
   });
 
   test('navigation keys still work while chrome is hidden', async ({ page }) => {

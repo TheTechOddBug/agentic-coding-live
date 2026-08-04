@@ -20,9 +20,10 @@
 
 ## Feature list to build
 
-- [ ] **Audience/presenter mode toggle** (keyboard shortcut, e.g. `P`) that hides *all* chrome from the projected view: prev/next buttons, the notes button, the counter, the slide timer — while keeping arrow-key/space navigation and `N` fully functional under the hood.
-- [ ] Keep the existing `N` shortcut for notes, just stop rendering a button for it (or only render it in presenter mode).
+- [x] **Audience/presenter mode toggle** (keyboard shortcut, e.g. `P`) that hides *all* chrome from the projected view: prev/next buttons, the notes button, the counter, the slide timer — while keeping arrow-key/space navigation and `N` fully functional under the hood.
+- [x] Keep the existing `N` shortcut for notes, just stop rendering a button for it (or only render it in presenter mode).
 - [ ] Ensure the timer math still displays correctly in both modes.
+- [ ] Keep the cumulative slide timer visible in the lower-right corner in presenter mode (chrome-hidden), not just in edit mode. Currently `body.chrome-hidden` hides `#slide-time` along with the nav chrome, so the presenter loses their clock exactly when they need it most.
 - [ ] Stretch: Timer calibration feature. When the slides are made but not the notes, this feature allows a presenter to present the slides in timer mode, talking through the slides the way they would in real life. The feature transcribes the words they say into the notes of the appropriate slide adn calculates their speaking words per minute so that the timer then displays times approximate to the amount of text in the notes and the presenters' words per minute. 
 - [ ] Stretch: a small on-screen indicator only visible in presenter mode confirming which mode is active (so Chelsea isn't guessing before going on stage).
 - [ ] Stretch: second-monitor-friendly presenter view (notes + timer + upcoming slide) vs. a clean audience view — this is the "real" two-window presenter mode pattern (like PowerPoint/Keynote presenter view). Bigger lift; only attempt if the core toggle above lands early.
