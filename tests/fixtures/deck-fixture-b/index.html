@@ -1,0 +1,43 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Fixture Deck B</title>
+<link rel="stylesheet" href="theme.css">
+<link rel="stylesheet" href="../../../mechanics/mechanics.css">
+</head>
+<body>
+
+<div class="slide active" id="s1">
+  <div class="section-label">Intro</div>
+  <h2>Deck B slide one</h2>
+  <aside class="notes">Lorem ipsum dolor sit amet, consectetur adipiscing elit. Sed do eiusmod tempor incididunt ut labore et dolore magna aliqua. Ut enim ad minim veniam, quis nostrud exercitation ullamco laboris nisi ut aliquip ex ea commodo consequat.</aside>
+</div>
+
+<div class="slide" id="s2">
+  <div class="section-label">Close</div>
+  <h2>Deck B slide two</h2>
+  <aside class="notes">Duis aute irure dolor in reprehenderit in voluptate velit esse cillum dolore eu fugiat nulla pariatur. Excepteur sint occaecat cupidatat non proident, sunt in culpa qui officia deserunt mollit anim id est laborum.</aside>
+</div>
+
+<div id="slide-time"></div>
+
+<div id="notes-panel">
+  <div id="notes-controls">
+    <button onclick="adjustNotesFontSize(-2)">A-</button>
+    <button onclick="adjustNotesFontSize(2)">A+</button>
+  </div>
+  <div id="notes-content"></div>
+</div>
+
+<div id="nav">
+  <button onclick="goTo(current-1)">&larr; prev</button>
+  <span id="counter">1 / 2</span>
+  <button onclick="goTo(current+1)">next &rarr;</button>
+  <button id="notes-btn" onclick="toggleNotes()" title="Toggle speaking notes (N)">notes [N]</button>
+</div>
+
+<script src="../../../mechanics/mechanics.js" defer></script>
+</body>
+</html>

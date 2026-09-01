@@ -1,0 +1,37 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>New Deck</title>
+<link rel="stylesheet" href="theme.css">
+<link rel="stylesheet" href="../../mechanics/mechanics.css">
+</head>
+<body>
+
+<div class="slide active" id="s1">
+  <div class="section-label">Section</div>
+  <h2>First slide</h2>
+  <aside class="notes">Speaker notes for the first slide go here.</aside>
+</div>
+
+<div id="slide-time"></div>
+
+<div id="notes-panel">
+  <div id="notes-controls">
+    <button onclick="adjustNotesFontSize(-2)">A-</button>
+    <button onclick="adjustNotesFontSize(2)">A+</button>
+  </div>
+  <div id="notes-content"></div>
+</div>
+
+<div id="nav">
+  <button onclick="goTo(current-1)">&larr; prev</button>
+  <span id="counter">1 / 1</span>
+  <button onclick="goTo(current+1)">next &rarr;</button>
+  <button id="notes-btn" onclick="toggleNotes()" title="Toggle speaking notes (N)">notes [N]</button>
+</div>
+
+<script src="../../mechanics/mechanics.js" defer></script>
+</body>
+</html>
