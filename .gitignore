@@ -2,3 +2,5 @@ node_modules/
 test-results/
 playwright-report/
 RUN_OF_SHOW.md
+dist/
+.DS_Store
